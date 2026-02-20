@@ -1,0 +1,7 @@
+{
+  "/map/page": "app/map/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/timeline/page": "app/timeline/page.js",
+  "/page": "app/page.js",
+  "/auth/page": "app/auth/page.js"
+}

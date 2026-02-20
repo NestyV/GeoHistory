@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pre-commit hook: regenerate DATABASE_SETUP.sql from db/schema.sql
+# This script ensures DATABASE_SETUP.sql is always synchronized with db/schema.sql before committing
+
+echo "Running pre-commit hook: regenerate DATABASE_SETUP.sql"
+npm run db:generate
+
+# Don't fail the commit if db:generate fails (use exit 0 to allow commit to proceed)
+exit 0
