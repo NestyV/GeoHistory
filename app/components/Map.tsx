@@ -232,20 +232,29 @@ export default function Map() {
         { onConflict: 'id' }
       )
 
-      if (userError) {
-        console.error('Error creating user:', userError)
-        alert('Error: ' + userError.message)
-        return
-      }
+      if (userError) throw userError;
+
+      // 2. Manejo de Personajes
+      // Si los personajes ahora se mantienen en una tabla, 
+      // lo ideal es enviar el array como JSONB pero asegurándonos de que sea plano
+      // para que Supabase no se atragante con objetos complejos.
+      const cleanCharacterList = characterList.map(char => ({
+        name: char.name.trim(),
+        description: char.description.trim(),
+        image_url: char.image_url.trim()
+      }));
 
       // Upsert characters if any were added
-      if (characterList.length > 0) {
-        await upsertCharacters(characterList)
+      if (cleanCharacterList.length > 0) {
+        // Intentamos el upsert pero sin bloquear el flujo principal si falla, ya que no es crítico para la creación del evento
+        await upsertCharacters(cleanCharacterList).catch(err => 
+          console.error("Error no crítico en upsertCharacters:", err)
+        );
       }
 
       // Now insert the event (include optional frame_id)
       const isSuper = currentProfile?.role === 'super_user'
-      const { error } = await supabase.from('events').insert([
+      const { error: insertError } = await supabase.from('events').insert([
         {
           user_id: currentUser.id,
           lat: formData.lat,
@@ -253,36 +262,36 @@ export default function Map() {
           title: formData.title,
           description: formData.description,
           event_date: formData.date,
-          characters: characterList,
+          characters: cleanCharacterList, // Enviamos la lista limpia
           status: isSuper ? 'approved' : 'pending',
-          frame_id: selectedFrameId || null
+          frame_id: (selectedFrameId && selectedFrameId !== "") ? selectedFrameId : null
         }
       ])
 
-      if (error) {
-        console.error('Error adding event:', error)
-        alert('Error adding event: ' + error.message)
-      } else {
-        alert('Event added! Waiting for super user approval.')
-        setShowAddForm(false)
+      if (insertError)  throw insertError;
+      
+      // Exito y limpieza
+        alert('Event added! Waiting for super user approval.');
+        setShowAddForm(false);
         setFormData({
           lat: 0,
           lng: 0,
           title: '',
           description: '',
           date: ''
-        })
-        setCharacterList([])
+        });
+        setCharacterList([]);
+
         // Refresh events
         const { data } = await supabase
           .from('events')
           .select('*')
           .eq('status', 'approved')
         if (data) setEvents(data)
-      }
-    } catch (e) {
+
+    } catch (e: any) {
       console.error('Unexpected error:', e)
-      alert('Unexpected error: ' + (e as Error).message)
+      alert('Unexpected error: ' + (e.message || 'Unknown error'))
     }
   }
 

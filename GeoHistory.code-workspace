@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "GeoHistory",
+			"path": "."
+		}
+	],
+	"settings": {
+		"github.copilot.chat.alternateGeminiModelFPrompt.enabled": true
+	}
+}

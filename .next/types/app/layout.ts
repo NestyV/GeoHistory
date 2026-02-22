@@ -1,4 +1,4 @@
-// File: D:\Proj\GeoHistory\app\layout.tsx
+// File: D:\Proj\GeoHistory\GeoHistory\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -1,4 +1,4 @@
-// File: D:\Proj\GeoHistory\app\timeline\page.tsx
+// File: D:\Proj\GeoHistory\GeoHistory\app\timeline\page.tsx
 import * as entry from '../../../../app/timeline/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
