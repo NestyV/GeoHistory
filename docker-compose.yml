@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: geohistory-postgres
+    environment:
+      POSTGRES_DB: geohistory
+      POSTGRES_USER: geohistory_user
+      POSTGRES_PASSWORD: change_this_password_12345
+      POSTGRES_INITDB_ARGS: "-c max_connections=100"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./DATABASE_SETUP.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geohistory_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - geohistory-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: geohistory-backend
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: geohistory
+      DB_USER: geohistory_user
+      DB_PASSWORD: change_this_password_12345
+      PORT: 3001
+      JWT_SECRET: your_super_secret_jwt_key_change_this_min_32_characters
+      JWT_EXPIRATION: 7d
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+    restart: unless-stopped
+    networks:
+      - geohistory-network
+    command: npm run dev
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: geohistory-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_API_TIMEOUT: 30000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./app:/app/app
+      - ./lib:/app/lib
+      - ./public:/app/public
+    restart: unless-stopped
+    networks:
+      - geohistory-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  geohistory-network:
+    driver: bridge

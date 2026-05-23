@@ -1,32 +1,33 @@
--- GENERATED FILE - Do not edit directly.
--- Source: db/schema.sql
--- Generated at: 2026-02-20T02:06:10.499Z
+-- GENERATED FILE - Canonical DB schema for GeoHistory
+-- Edit as needed, then recreate database
 
--- Canonical DB schema for GeoHistory
--- Edit this file as the source of truth. Run `npm run db:generate` to update DATABASE_SETUP.sql
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create users table
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   full_name TEXT,
+  password_hash TEXT NOT NULL,
   role TEXT DEFAULT 'regular' CHECK (role IN ('regular', 'super_user')),
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create frames (historical frameworks) table
-CREATE TABLE frames (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS frames (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT UNIQUE NOT NULL,
   description TEXT,
   start_date DATE,
   end_date DATE,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create events table
-CREATE TABLE events (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   frame_id UUID REFERENCES frames(id) ON DELETE SET NULL,
   lat DOUBLE PRECISION NOT NULL,
@@ -36,108 +37,42 @@ CREATE TABLE events (
   event_date DATE NOT NULL,
   characters JSONB DEFAULT '[]'::jsonb,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved')),
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create characters table
-CREATE TABLE characters (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS characters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT UNIQUE NOT NULL,
   description TEXT,
   image_url TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indices for better performance
-CREATE INDEX idx_events_user_id ON events(user_id);
-CREATE INDEX idx_events_frame_id ON events(frame_id);
-CREATE INDEX idx_events_status ON events(status);
-CREATE INDEX idx_events_event_date ON events(event_date);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_frame_id ON events(frame_id);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+CREATE INDEX IF NOT EXISTS idx_events_event_date ON events(event_date);
+CREATE INDEX IF NOT EXISTS idx_events_lat_lng ON events(lat, lng);
+CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
+CREATE INDEX IF NOT EXISTS idx_frames_start_date ON frames(start_date);
 
--- Set up Row Level Security (RLS) policies
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE characters ENABLE ROW LEVEL SECURITY;
-ALTER TABLE frames ENABLE ROW LEVEL SECURITY;
+-- Insert seed data (optional demo data)
+INSERT INTO frames (name, description, start_date, end_date) VALUES
+  ('Ancient World', 'Period from 3000 BC to 500 AD', '3000-01-01', '0500-12-31'),
+  ('Medieval Period', 'Period from 500 AD to 1500 AD', '0500-01-01', '1500-12-31'),
+  ('Renaissance', 'Period from 1300 to 1700', '1300-01-01', '1700-12-31'),
+  ('Industrial Revolution', 'Period from 1760 to 1840', '1760-01-01', '1840-12-31'),
+  ('Modern Era', 'Period from 1900 to present', '1900-01-01', '2100-12-31')
+ON CONFLICT (name) DO NOTHING;
 
--- Users can read all user profiles
-CREATE POLICY "Users can read all profiles" ON users
-  FOR SELECT USING (true);
-
--- Authenticated users can insert their own profile
-CREATE POLICY "Authenticated users can insert their own profile" ON users
-  FOR INSERT WITH CHECK (auth.uid() = id);
-
--- Authenticated users can update their own profile
-CREATE POLICY "Authenticated users can update their own profile" ON users
-  FOR UPDATE USING (auth.uid() = id);
-
--- Events: Everyone can read approved events
-CREATE POLICY "Anyone can read approved events" ON events
-  FOR SELECT USING (status = 'approved');
-
--- Events: Authenticated users can read their own pending events
-CREATE POLICY "Users can read their own pending events" ON events
-  FOR SELECT USING (
-    auth.uid() = user_id AND status = 'pending'
-  );
-
--- Events: Authenticated users can insert events
-CREATE POLICY "Authenticated users can insert events" ON events
-  FOR INSERT WITH CHECK (
-    auth.uid() = user_id
-  );
-
--- Events: Super users can approve events
-CREATE POLICY "Super users can update events" ON events
-  FOR UPDATE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
--- Events: Only super users can delete events
-CREATE POLICY "Super users can delete events" ON events
-  FOR DELETE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
--- Characters: Everyone can read characters
-CREATE POLICY "Anyone can read characters" ON characters
-  FOR SELECT USING (true);
-
--- Characters: Authenticated users can insert characters
-CREATE POLICY "Authenticated users can insert characters" ON characters
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
--- Characters: Only super users can update characters
-CREATE POLICY "Super users can update characters" ON characters
-  FOR UPDATE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
--- Characters: Only super users can delete characters
-CREATE POLICY "Super users can delete characters" ON characters
-  FOR DELETE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
--- Frames: Everyone can read historical frames
-CREATE POLICY "Anyone can read frames" ON frames
-  FOR SELECT USING (true);
-
--- Frames: Only super users can create frames
-CREATE POLICY "Super users can insert frames" ON frames
-  FOR INSERT WITH CHECK (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
--- Frames: Only super users can update frames
-CREATE POLICY "Super users can update frames" ON frames
-  FOR UPDATE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
--- Frames: Only super users can delete frames
-CREATE POLICY "Super users can delete frames" ON frames
-  FOR DELETE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
+INSERT INTO characters (name, description) VALUES
+  ('Leonardo da Vinci', 'Italian polymath of the Renaissance'),
+  ('Napoleon Bonaparte', 'French military commander and emperor'),
+  ('Cleopatra', 'Queen of ancient Egypt'),
+  ('Isaac Newton', 'English mathematician and physicist'),
+  ('Marie Curie', 'Polish-born physicist and chemist')
+ON CONFLICT (name) DO NOTHING;
