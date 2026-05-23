@@ -74,11 +74,24 @@ export async function fetchCharacters() {
 export async function upsertCharacters(characters: Omit<Character, 'id' | 'created_at'>[]) {
   if (!characters || characters.length === 0) return []
   
-  const { data, error } = await supabase
-    .from('characters')
-    .upsert(characters, { onConflict: 'name' })
-    .select()
-  
-  if (error) console.error('Error upserting characters:', error)
-  return (data || []) as Character[]
+  try {
+    // Solo hacemos el upsert sin pedir los datos de vuelta (.select())
+    // Esto evita el error 404 si hay problemas de permisos de lectura
+    const { error } = await supabase
+      .from("characters")
+      .upsert(characters, { 
+        onConflict: "name",
+        ignoreDuplicates: false 
+      });
+
+    if (error) {
+      console.error("Error en upsertCharacters:", error.message);
+      return [];
+    }
+
+    return []; // Retornamos array vacío ya que no necesitamos los IDs ahora
+  } catch (err) {
+    console.error("Error inesperado en personajes:", err);
+    return [];
+  }
 }

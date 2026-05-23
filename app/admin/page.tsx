@@ -51,6 +51,7 @@ export default function AdminPanel() {
     if (error) {
       console.error('Error fetching pending events:', error)
     } else {
+      console.log('Fetched pending events:', data)
       setPendingEvents(data || [])
     }
   }
