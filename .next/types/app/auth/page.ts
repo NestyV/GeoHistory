@@ -1,4 +1,4 @@
-// File: D:\Proj\GeoHistory\GeoHistory\app\auth\page.tsx
+// File: /home/ryzenpc/projects/GeoHistory/app/auth/page.tsx
 import * as entry from '../../../../app/auth/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

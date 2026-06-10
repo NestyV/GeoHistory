@@ -1,71 +1,67 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { auth } from '@/lib/api'
+import { t } from '@/app/lib/i18n'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import LanguageSelector from './LanguageSelector'
 
 export default function Navbar() {
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const router = useRouter()
+
+  const getRoleName = (role: string) => {
+    switch (role) {
+      case 'regular': return t('regular')
+      case 'curator': return t('curator')
+      case 'super_user': return t('admin')
+      default: return ''
+    }
+  }
 
   useEffect(() => {
-    // Check current user on mount
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setCurrentUser(user)
-
-      if (user) {
-        // Get user role from database
-        const { data } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        
-        if (data) {
-          setUserRole(data.role)
-        }
-      }
-      setLoading(false)
+    const user = auth.getUser()
+    setCurrentUser(user)
+    
+    if (user) {
+      setUserRole(user.role || 'regular')
     }
+    setLoading(false)
 
-    checkUser()
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const user = session?.user ?? null
+    const unsubscribe = auth.onAuthChange((user) => {
       setCurrentUser(user)
-
       if (user) {
-        // Get user role from database
-        const { data } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-
-        if (data) {
-          setUserRole(data.role)
-        } else {
-          setUserRole(null)
-        }
+        setUserRole(user.role || 'regular')
       } else {
         setUserRole(null)
       }
     })
 
-    return () => {
-      subscription?.unsubscribe()
-    }
+    return () => unsubscribe()
   }, [])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    // IMPORTANTE: NO eliminar las preferencias de la base de datos
+    // Solo limpiar sessionStorage y localStorage (excepto las preferencias)
+    
+    // Limpiar solo sessionStorage (preferencias temporales)
+    sessionStorage.removeItem('last_frame_id')
+    sessionStorage.removeItem('last_year')
+    sessionStorage.removeItem('map_center')
+    sessionStorage.removeItem('map_zoom')
+    
+    // Hacer logout (esto limpia auth_token y user de localStorage)
+    await auth.logout()
+    
     setCurrentUser(null)
     setUserRole(null)
-    window.location.href = '/'
+    router.push('/')
   }
+
+  const canAccessAdmin = userRole === 'curator' || userRole === 'super_user'
 
   if (loading) {
     return null
@@ -77,37 +73,39 @@ export default function Navbar() {
         <Link href="/" className="text-2xl font-bold">
           🌍 GeoHistory
         </Link>
-        
+
         <div className="flex gap-4 items-center">
           <Link href="/map" className="hover:text-blue-300">
-            Map
+            {t('map')}
           </Link>
           <Link href="/timeline" className="hover:text-blue-300">
-            Timeline
+            {t('timeline')}
           </Link>
-          
-          {userRole === 'super_user' && (
+
+          {canAccessAdmin && (
             <Link href="/admin" className="hover:text-green-300 font-semibold">
-              Admin Panel
+              {t('adminPanel')}
             </Link>
           )}
+
+          <LanguageSelector />
 
           {currentUser ? (
             <div className="flex gap-4 items-center">
               <span className="text-sm">
                 {currentUser.email}
-                {userRole === 'super_user' && ' (Super User)'}
+                {userRole && ` (${getRoleName(userRole)})`}
               </span>
               <button
                 onClick={handleLogout}
                 className="bg-red-600 px-4 py-2 rounded hover:bg-red-700"
               >
-                Logout
+                {t('logout')}
               </button>
             </div>
           ) : (
             <Link href="/auth" className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">
-              Login
+              {t('login')}
             </Link>
           )}
         </div>

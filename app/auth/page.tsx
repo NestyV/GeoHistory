@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { auth } from '@/lib/api'
+import { t } from '@/app/lib/i18n'
 import { useRouter } from 'next/navigation'
 
 export default function Auth() {
@@ -20,51 +21,38 @@ export default function Auth() {
 
     try {
       if (isSignUp) {
-        // Sign up
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-        })
+        const { user, token, error: signUpError } = await auth.signUp(
+          email, 
+          password, 
+          fullName
+        )
 
         if (signUpError) {
-          setError(signUpError.message)
+          setError(signUpError)
           return
         }
 
-        if (data.user) {
-          // Create user profile
-          const { error: profileError } = await supabase.from('users').insert([
-            {
-              id: data.user.id,
-              email,
-              full_name: fullName,
-              role: 'regular'
-            }
-          ])
-
-          if (profileError) {
-            setError(profileError.message)
-            return
-          }
+        if (user) {
+          alert(t('signUpSuccess'))
+          setIsSignUp(false)
+          setEmail('')
+          setPassword('')
+          setFullName('')
         }
-
-        alert('Sign up successful! Check your email to confirm.')
       } else {
-        // Sign in
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
+        const { user, token, error: signInError } = await auth.login(email, password)
 
         if (signInError) {
-          setError(signInError.message)
+          setError(signInError)
           return
         }
-      }
 
-      router.push('/map')
+        if (user && token) {
+          router.push('/map')
+        }
+      }
     } catch (e) {
-      setError('An unexpected error occurred')
+      setError(t('errorOccurred'))
       console.error(e)
     } finally {
       setLoading(false)
@@ -75,7 +63,7 @@ export default function Auth() {
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h1 className="text-3xl font-bold mb-6 text-center">
-          {isSignUp ? 'Sign Up' : 'Sign In'}
+          {isSignUp ? t('signUp') : t('signIn')}
         </h1>
 
         {error && (
@@ -88,7 +76,7 @@ export default function Auth() {
           {isSignUp && (
             <input
               type="text"
-              placeholder="Full Name"
+              placeholder={t('fullName')}
               value={fullName}
               onChange={e => setFullName(e.target.value)}
               className="w-full p-3 border rounded"
@@ -98,7 +86,7 @@ export default function Auth() {
 
           <input
             type="email"
-            placeholder="Email"
+            placeholder={t('email')}
             value={email}
             onChange={e => setEmail(e.target.value)}
             className="w-full p-3 border rounded"
@@ -107,7 +95,7 @@ export default function Auth() {
 
           <input
             type="password"
-            placeholder="Password"
+            placeholder={t('password')}
             value={password}
             onChange={e => setPassword(e.target.value)}
             className="w-full p-3 border rounded"
@@ -117,9 +105,9 @@ export default function Auth() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white p-3 rounded font-semibold hover:bg-blue-700 disabled:opacity-50"
+            className="w-full bg-blue-500 text-white p-3 rounded hover:bg-blue-600 disabled:bg-gray-400"
           >
-            {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+            {loading ? t('loading') : (isSignUp ? t('signUp') : t('signIn'))}
           </button>
         </form>
 
@@ -128,9 +116,9 @@ export default function Auth() {
             setIsSignUp(!isSignUp)
             setError(null)
           }}
-          className="w-full mt-4 text-blue-600 hover:text-blue-700"
+          className="w-full mt-4 text-blue-500 hover:text-blue-700"
         >
-          {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          {isSignUp ? t('login') : t('signUp')}
         </button>
       </div>
     </div>

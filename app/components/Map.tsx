@@ -1,13 +1,15 @@
- 'use client'
+'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { useEffect, useState, useRef } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { HistoricalEvent, Frame } from '../types'
-import { supabase } from '@/lib/supabase'
-import { fetchFrames, createFrame, upsertCharacters } from '@/lib/database'
+import { api, auth } from '@/lib/api'
+import EventForm from './EventForm'
+import OptimizedImage from './OptimizedImage'
+import { t } from '@/app/lib/i18n'
 
+// Fix Leaflet icons
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -15,513 +17,481 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-interface MapInteractionProps {
+function MapEventManager({ onAddEvent, onMapMove }: { 
   onAddEvent: (lat: number, lng: number) => void
-  events: HistoricalEvent[]
-  selectedYear: number | null
-}
-
-function MapInteraction({ onAddEvent, events, selectedYear }: MapInteractionProps) {
-  const map = useMap()
-  const markersRef = useRef<{ [key: string]: L.Marker }>({})
-
-  useEffect(() => {
-    const mapContainer = map.getContainer() as HTMLElement
-
-    // Prevent context menu and capture right-click
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
+  onMapMove: (center: L.LatLng, zoom: number) => void
+}) {
+  const map = useMapEvents({
+    contextmenu: (e) => {
+      e.originalEvent.preventDefault()
+      e.originalEvent.stopPropagation()
+      onAddEvent(e.latlng.lat, e.latlng.lng)
       return false
-    }
-
-    // Handle right-click on mousedown
-    const handleMouseDown = (e: MouseEvent) => {
-      if (e.button === 2) { // Right mouse button only
-        e.preventDefault()
-        e.stopPropagation()
-        
-        // Get coordinates relative to map
-        const rect = mapContainer.getBoundingClientRect()
-        const x = e.clientX - rect.left
-        const y = e.clientY - rect.top
-
-        // Convert pixel coordinates to lat/lng
-        const point = map.containerPointToLatLng(L.point(x, y))
-        onAddEvent(point.lat, point.lng)
-      }
-    }
-
-    // Prevent right-click context menu
-    mapContainer.addEventListener('contextmenu', handleContextMenu, true)
-    // Capture right-click on mouse down
-    mapContainer.addEventListener('mousedown', handleMouseDown, true)
-
-    return () => {
-      mapContainer.removeEventListener('contextmenu', handleContextMenu, true)
-      mapContainer.removeEventListener('mousedown', handleMouseDown, true)
-    }
-  }, [map, onAddEvent])
-
-  // Add/remove markers based on selected year
-  useEffect(() => {
-    // Remove all markers
-    Object.values(markersRef.current).forEach(marker => {
-      map.removeLayer(marker)
-    })
-    markersRef.current = {}
-
-    // Add markers for selected year
-    if (selectedYear) {
-      events
-        .filter(event => {
-          const eventYear = parseInt(event.event_date.split('-')[0])
-          return eventYear === selectedYear && event.status === 'approved'
-        })
-        .forEach(event => {
-          const charactersHtml = Array.isArray(event.characters)
-            ? event.characters
-              .map((char: any) => {
-                const charObj = typeof char === 'string' ? { name: char, image_url: null } : char
-                return `<div class="mb-2 text-sm">
-                  <strong>${charObj.name || 'Unknown'}</strong>
-                  ${charObj.image_url ? `<br/><img src="${charObj.image_url}" alt="${charObj.name}" style="max-width:100px; max-height:100px; border-radius:4px; margin-top:4px;" />` : ''}
-                </div>`
-              })
-              .join('')
-            : ''
-          
-          const popupContent = `
-            <div style="font-size:12px;">
-              <strong style="font-size:14px;">${event.title}</strong><br/>
-              ${event.event_date}<br/>
-              <em>${event.description}</em><br/>
-              ${charactersHtml ? `<hr style="margin:4px 0;"/><strong>Historical Figures:</strong>${charactersHtml}` : ''}
-            </div>
-          `
-          const marker = L.marker([event.lat, event.lng]).bindPopup(popupContent)
-          marker.addTo(map)
-          markersRef.current[event.id] = marker
-        })
-    }
-  }, [selectedYear, events, map])
-
+    },
+    moveend: () => {
+      const center = map.getCenter()
+      const zoom = map.getZoom()
+      onMapMove(center, zoom)
+    },
+    zoomend: () => {
+      const center = map.getCenter()
+      const zoom = map.getZoom()
+      onMapMove(center, zoom)
+    },
+  })
   return null
 }
 
 export default function Map() {
-  const [events, setEvents] = useState<HistoricalEvent[]>([])
-  const [selectedYear, setSelectedYear] = useState<number | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
+  const [events, setEvents] = useState<any[]>([])
+  const [frames, setFrames] = useState<any[]>([])
+  const [characters, setCharacters] = useState<any[]>([])
+  const [showEventForm, setShowEventForm] = useState(false)
+  const [newEventLat, setNewEventLat] = useState<number | null>(null)
+  const [newEventLng, setNewEventLng] = useState<number | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
-  const [currentProfile, setCurrentProfile] = useState<any>(null)
-  const [years, setYears] = useState<number[]>([])
-  const [frames, setFrames] = useState<Frame[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null)
-  const [newFrameName, setNewFrameName] = useState('')
-  const [newFrameDescription, setNewFrameDescription] = useState('')
-  const [characterList, setCharacterList] = useState<Array<{ name: string; description: string; image_url: string }>>([])
-  const [newCharacterName, setNewCharacterName] = useState('')
-  const [newCharacterDescription, setNewCharacterDescription] = useState('')
-  const [newCharacterImageUrl, setNewCharacterImageUrl] = useState('')
-  const [formData, setFormData] = useState({
-    lat: 0,
-    lng: 0,
-    title: '',
-    description: '',
-    date: ''
-  })
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [years, setYears] = useState<number[]>([])
+  
+  const [mapCenter, setMapCenter] = useState<[number, number]>([20, 0])
+  const [mapZoom, setMapZoom] = useState<number>(2)
+  const [userSelectedYear, setUserSelectedYear] = useState(false)
+  
+  const refreshInterval = useRef<NodeJSoudTimeout | null>(null)
+  const isMounted = useRef(true)
+  const dataLoaded = useRef(false)
+  const saveTimeout = useRef<NodeJSoudTimeout>()
 
-  // Load current user
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setCurrentUser(user)
-      if (user) {
-        // fetch profile to get role
-        const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single()
-        if (profile) setCurrentProfile(profile)
-      }
-    }
-    getUser()
-  }, [])
-
-  // Fetch events from Supabase
-  useEffect(() => {
-    const fetchEvents = async () => {
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .eq('status', 'approved')
-      
-      if (error) {
-        console.error('Error fetching events:', error)
-      } else {
-        setEvents(data || [])
-      }
-    }
-
-    fetchEvents()
-
-    // fetch frames for selector
-    const loadFrames = async () => {
-      const f = await fetchFrames()
-      setFrames(f)
-    }
-    loadFrames()
-
-    // Subscribe to real-time changes
-    const subscription = supabase
-      .channel('events')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
-        fetchEvents()
-      })
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  useEffect(() => {
-    const uniqueYears = [
-      ...new Set(
-        events
-          .filter(e => e.status === 'approved')
-          .map(e => parseInt(e.event_date.split('-')[0]))
-      ),
-    ].sort((a, b) => a - b)
-    setYears(uniqueYears)
+  // Función para guardar preferencias
+  const savePreferences = async () => {
+    const token = localStorage.getItem('auth_token')
+    if (!token || !currentUser) return
     
-    // Auto-select first year
-    if (uniqueYears.length > 0 && selectedYear === null) {
-      setSelectedYear(uniqueYears[0])
+    const payload = {
+      last_frame_id: selectedFrameId,
+      last_year: selectedYear,
+      last_lat: mapCenter[0],
+      last_lng: mapCenter[1],
+      last_zoom: mapZoom
     }
-  }, [events, selectedYear])
+    
+    try {
+      await fetch('http://localhost:3001/api/user/preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      })
+      console.log('💾 Preferencias guardadas:', payload)
+    } catch (error) {
+      console.error('Error saving preferences:', error)
+    }
+  }
+
+  // Función para cargar preferencias
+  const loadPreferences = async () => {
+    const token = localStorage.getItem('auth_token')
+    if (!token) return null
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/user/preferences', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await response.json()
+      if (data.hasPreferences && data.preferences) {
+        return data.preferences
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error)
+    }
+    return null
+  }
+
+  // Cargar usuario
+  useEffect(() => {
+    const user = auth.getUser()
+    setCurrentUser(user)
+  }, [])
+
+  // Cargar datos y preferencias
+  useEffect(() => {
+    if (!currentUser) return
+    
+    const init = async () => {
+      setLoading(true)
+      
+      // Cargar datos
+      const [eventsData, framesData, charactersData] = await Promise.all([
+        api.getEvents(),
+        api.getFrames(),
+        api.getCharacters()
+      ])
+      
+      setEvents(eventsData || [])
+      setFrames(framesData || [])
+      setCharacters(charactersData || [])
+      
+      // Cargar preferencias
+      const prefs = await loadPreferences()
+      
+      if (prefs) {
+        if (prefs.last_frame_id && framesData?.find((f: any) => f.id === prefs.last_frame_id)) {
+          setSelectedFrameId(prefs.last_frame_id)
+        } else if (framesData && framesData.length > 0) {
+          setSelectedFrameId(framesData[0].id)
+        }
+        
+        if (prefs.last_year) {
+          setSelectedYear(prefs.last_year)
+          setUserSelectedYear(true)
+        }
+        
+        if (prefs.last_lat && prefs.last_lng && prefs.last_zoom) {
+          setMapCenter([prefs.last_lat, prefs.last_lng])
+          setMapZoom(prefs.last_zoom)
+        }
+      } else if (framesData && framesData.length > 0) {
+        setSelectedFrameId(framesData[0].id)
+      }
+      
+      dataLoaded.current = true
+      setLoading(false)
+    }
+    
+    init()
+    
+    // Refresh periódico de datos
+    refreshInterval.current = setInterval(async () => {
+      if (isMounted.current) {
+        try {
+          const [eventsData, framesData] = await Promise.all([
+            api.getEvents(),
+            api.getFrames()
+          ])
+          if (isMounted.current) {
+            setEvents(eventsData || [])
+            setFrames(framesData || [])
+          }
+        } catch (error) {
+          console.error('Error refreshing:', error)
+        }
+      }
+    }, 30000)
+    
+    return () => {
+      isMounted.current = false
+      if (refreshInterval.current) clearInterval(refreshInterval.current)
+    }
+  }, [currentUser])
+
+  // Guardar preferencias cuando cambian (con debounce)
+  useEffect(() => {
+    if (!dataLoaded.current || !currentUser) return
+    
+    if (saveTimeout.current) clearTimeout(saveTimeout.current)
+    saveTimeout.current = setTimeout(savePreferences, 1000)
+    
+    return () => {
+      if (saveTimeout.current) clearTimeout(saveTimeout.current)
+    }
+  }, [selectedFrameId, selectedYear, mapCenter, mapZoom, currentUser, dataLoaded])
+
+  // Actualizar años según el marco seleccionado
+  useEffect(() => {
+    if (!dataLoaded.current) return
+    
+    let newYears: number[] = []
+    
+    if (!selectedFrameId) {
+      newYears = [...new Set(
+        events.filter(e => e.status === 'approved')
+          .map(e => new Date(e.event_date).getFullYear())
+      )].sort((a, b) => a - b)
+      setYears(newYears)
+      
+      if (!userSelectedYear && newYears.length > 0 && selectedYear === null) {
+        setSelectedYear(newYears[0])
+      }
+    } else {
+      const frameEvents = events.filter(e => 
+        e.status === 'approved' && e.frame_id === selectedFrameId
+      )
+      newYears = [...new Set(
+        frameEvents.map(e => new Date(e.event_date).getFullYear())
+      )].sort((a, b) => a - b)
+      setYears(newYears)
+      
+      if (selectedYear !== null && !newYears.includes(selectedYear)) {
+        setSelectedYear(newYears.length > 0 ? newYears[0] : null)
+        setUserSelectedYear(false)
+      }
+    }
+  }, [selectedFrameId, events, selectedYear, userSelectedYear])
 
   const handleAddEvent = (lat: number, lng: number) => {
     if (!currentUser) {
-      alert('Please log in to add events')
+      alert(t('loginToAdd'))
       return
     }
-    setFormData({ ...formData, lat, lng })
-    setCharacterList([])
-    setNewCharacterName('')
-    setNewCharacterDescription('')
-    setNewCharacterImageUrl('')
-    setShowAddForm(true)
+    setNewEventLat(lat)
+    setNewEventLng(lng)
+    setShowEventForm(true)
   }
 
-  const handleSubmit = async () => {
-    if (!formData.title || !formData.date) {
-      alert('Please fill in all fields')
-      return
-    }
-
-    try {
-      // Upsert user (create or update)
-      const { error: userError } = await supabase.from('users').upsert(
-        [
-          {
-            id: currentUser.id,
-            email: currentUser.email,
-            full_name: currentUser.email.split('@')[0],
-            role: 'regular'
-          }
-        ],
-        { onConflict: 'id' }
-      )
-
-      if (userError) throw userError;
-
-      // 2. Manejo de Personajes
-      // Si los personajes ahora se mantienen en una tabla, 
-      // lo ideal es enviar el array como JSONB pero asegurándonos de que sea plano
-      // para que Supabase no se atragante con objetos complejos.
-      const cleanCharacterList = characterList.map(char => ({
-        name: char.name.trim(),
-        description: char.description.trim(),
-        image_url: char.image_url.trim()
-      }));
-
-      // Upsert characters if any were added
-      if (cleanCharacterList.length > 0) {
-        // Intentamos el upsert pero sin bloquear el flujo principal si falla, ya que no es crítico para la creación del evento
-        await upsertCharacters(cleanCharacterList).catch(err => 
-          console.error("Error no crítico en upsertCharacters:", err)
-        );
-      }
-
-      // Now insert the event (include optional frame_id)
-      const isSuper = currentProfile?.role === 'super_user'
-      const { error: insertError } = await supabase.from('events').insert([
-        {
-          user_id: currentUser.id,
-          lat: formData.lat,
-          lng: formData.lng,
-          title: formData.title,
-          description: formData.description,
-          event_date: formData.date,
-          characters: cleanCharacterList, // Enviamos la lista limpia
-          status: isSuper ? 'approved' : 'pending',
-          frame_id: (selectedFrameId && selectedFrameId !== "") ? selectedFrameId : null
-        }
-      ])
-
-      if (insertError)  throw insertError;
-      
-      // Exito y limpieza
-        alert('Event added! Waiting for super user approval.');
-        setShowAddForm(false);
-        setFormData({
-          lat: 0,
-          lng: 0,
-          title: '',
-          description: '',
-          date: ''
-        });
-        setCharacterList([]);
-
-        // Refresh events
-        const { data } = await supabase
-          .from('events')
-          .select('*')
-          .eq('status', 'approved')
-        if (data) setEvents(data)
-
-    } catch (e: any) {
-      console.error('Unexpected error:', e)
-      alert('Unexpected error: ' + (e.message || 'Unknown error'))
-    }
+  const handleFrameSelect = (frameId: string | null) => {
+    setSelectedFrameId(frameId)
   }
 
-  const handleCreateFrame = async () => {
-    if (!newFrameName) return alert('Frame name required')
-    try {
-      const created = await createFrame({ name: newFrameName, description: newFrameDescription || undefined })
-      if (created) {
-        setFrames(prev => [created, ...prev])
-        setSelectedFrameId(created.id)
-        setNewFrameName('')
-        setNewFrameDescription('')
-      }
-    } catch (err) {
-      console.error('Error creating frame:', err)
-      alert('Error creating frame')
-    }
+  const handleYearSelect = (year: number | null) => {
+    setUserSelectedYear(true)
+    setSelectedYear(year)
   }
 
-  const handleAddCharacter = () => {
-    if (!newCharacterName.trim()) {
-      alert('Character name required')
-      return
-    }
-    const newChar = {
-      name: newCharacterName.trim(),
-      description: newCharacterDescription.trim(),
-      image_url: newCharacterImageUrl.trim()
-    }
-    setCharacterList(prev => [...prev, newChar])
-    setNewCharacterName('')
-    setNewCharacterDescription('')
-    setNewCharacterImageUrl('')
+  const handleMapMove = (center: L.LatLng, zoom: number) => {
+    setMapCenter([center.lat, center.lng])
+    setMapZoom(zoom)
   }
 
-  const handleRemoveCharacter = (index: number) => {
-    setCharacterList(prev => prev.filter((_, i) => i !== index))
+  const getCharacterDetails = (characterName: string) => {
+    const character = characters.find(c => c.name === characterName)
+    return character || { name: characterName, image_url: null, description: '' }
+  }
+
+  const formatCharacterList = (characterNames: string[]) => {
+    if (characterNames.length === 0) return null
+    if (characterNames.length === 1) return characterNames[0]
+    if (characterNames.length === 2) return characterNames.join(' & ')
+    if (characterNames.length === 3) return characterNames.join(', ')
+    return `${characterNames.slice(0, 2).join(', ')} & ${characterNames.length - 2} ${t('more')}`
+  }
+
+  const filteredEvents = events.filter(e => {
+    if (e.status !== 'approved') return false
+    if (selectedFrameId && e.frame_id !== selectedFrameId) return false
+    if (selectedYear) {
+      const eventYear = new Date(e.event_date).getFullYear()
+      if (eventYear !== selectedYear) return false
+    }
+    return true
+  })
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">{t('loading')}</div>
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Timeline Bar */}
-      <div className="bg-gray-800 text-white p-4 overflow-x-auto">
-        <div className="flex gap-2 items-center">
-          <span className="whitespace-nowrap font-semibold">Timeline:</span>
-          <div className="flex gap-2">
-            {years.length === 0 ? (
-              <p className="text-gray-400">No events yet</p>
-            ) : (
-              years.map(year => (
+    <div className="relative h-full w-full flex flex-col">
+      {frames.length > 0 && (
+        <div className="bg-white border-b border-gray-200 shadow-sm z-10 flex-shrink-0">
+          <div className="px-2 py-1">
+            <div className="flex overflow-x-auto gap-1">
+              {frames.map(frame => (
                 <button
-                  key={year}
-                  onClick={() => setSelectedYear(year)}
-                  className={`px-4 py-2 rounded whitespace-nowrap transition-colors ${
-                    selectedYear === year
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-white'
+                  key={frame.id}
+                  onClick={() => handleFrameSelect(frame.id)}
+                  className={`px-3 py-1 rounded-md text-sm whitespace-nowrap transition-all ${
+                    selectedFrameId === frame.id
+                      ? 'bg-green-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
+                  title={frame.description || frame.name}
                 >
-                  {year}
+                  {frame.name}
                 </button>
-              ))
-            )}
+              ))}
+              <button
+                onClick={() => handleFrameSelect(null)}
+                className={`px-3 py-1 rounded-md text-sm whitespace-nowrap transition-all ${
+                  selectedFrameId === null
+                    ? 'bg-green-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {t('allFramesBtn')}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Info Bar */}
-      <div className="bg-blue-100 text-blue-900 p-2 text-sm">
-        💡 Right-click on the map to add a historical event
-        {!currentUser && ' | Please log in to add events'}
-      </div>
+      {years.length > 0 && (
+        <div className="bg-white border-b border-gray-200 shadow-sm z-10 flex-shrink-0">
+          <div className="px-2 py-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex overflow-x-auto gap-1 flex-1">
+                {years.map(year => (
+                  <button
+                    key={year}
+                    onClick={() => handleYearSelect(year)}
+                    className={`px-3 py-1 rounded-md text-sm whitespace-nowrap transition-all ${
+                      selectedYear === year
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {year}
+                  </button>
+                ))}
+                <button
+                  onClick={() => handleYearSelect(null)}
+                  className={`px-3 py-1 rounded-md text-sm whitespace-nowrap transition-all ${
+                    selectedYear === null
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {t('allYearsBtn')}
+                </button>
+              </div>
+              <div className="text-xs text-gray-500 flex-shrink-0">
+                {filteredEvents.length} {filteredEvents.length === 1 ? t('event') : t('events')}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Map */}
-      <div className="flex-1">
-        <MapContainer center={[0, 0]} zoom={2} style={{ height: '100%', width: '100%' }}>
+      <div className="flex-1 relative">
+        <MapContainer
+          key={`${mapCenter[0]}-${mapCenter[1]}-${mapZoom}`}
+          center={mapCenter}
+          zoom={mapZoom}
+          style={{ height: '100%', width: '100%' }}
+          className="map-container"
+        >
           <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; CartoDB'
           />
-          <MapInteraction 
-            onAddEvent={handleAddEvent} 
-            events={events} 
-            selectedYear={selectedYear}
-          />
+          
+          <MapEventManager onAddEvent={handleAddEvent} onMapMove={handleMapMove} />
+          
+          {filteredEvents.map(event => {
+            const characterNames = event.characters?.map((c: any) => typeof c === 'string' ? c : c.name) || []
+            const formattedCharacters = formatCharacterList(characterNames)
+            
+            return (
+              <Marker
+                key={event.id}
+                position={[event.lat, event.lng]}
+              >
+                <Tooltip 
+                  direction="top" 
+                  offset={[0, -20]} 
+                  opacity={1}
+                  permanent={false}
+                  sticky={false}
+                  interactive={false}
+                >
+                  <div style={{ 
+                    fontSize: '12px', 
+                    minWidth: '120px', 
+                    maxWidth: '220px',
+                    whiteSpace: 'normal',
+                    wordWrap: 'break-word'
+                  }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>{event.title}</div>
+                    <div style={{ fontSize: '10px', color: '#666' }}>📅 {new Date(event.event_date).getFullYear()}</div>
+                    {formattedCharacters && (
+                      <div style={{ fontSize: '10px', marginTop: '4px' }}>
+                        <span style={{ fontWeight: 'bold' }}>{t('figures')}:</span> {formattedCharacters}
+                      </div>
+                    )}
+                  </div>
+                </Tooltip>
+                
+                <Popup>
+                  <div className="max-w-xs">
+                    <strong className="text-lg">{event.title}</strong><br />
+                    <span className="text-sm text-gray-600">📅 {new Date(event.event_date).toLocaleDateString()}</span><br />
+                    {event.description && (
+                      <em className="text-sm text-gray-700">{event.description.substring(0, 150)}</em>
+                    )}<br />
+                    {event.frame_id && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        🏛️ {t('historicalFrame')}: {frames.find(f => f.id === event.frame_id)?.name || 'Desconocido'}
+                      </div>
+                    )}
+                    {event.characters && event.characters.length > 0 && (
+                      <>
+                        <hr className="my-2" />
+                        <strong className="text-sm">{t('historicalFigures')}:</strong>
+                        <div className="mt-2 space-y-2">
+                          {event.characters.map((c: any, i: number) => {
+                            const charName = typeof c === 'string' ? c : c.name
+                            const charDetails = getCharacterDetails(charName)
+                            return (
+                              <div key={i} className="flex items-center gap-2">
+                                {charDetails.image_url && (
+                                  <OptimizedImage 
+                                    src={charDetails.image_url} 
+                                    alt={charName} 
+                                    className="w-8 h-8 rounded-full object-cover border border-gray-300"
+                                  />
+                                )}
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium">{charName}</div>
+                                  {charDetails.description && (
+                                    <div className="text-xs text-gray-500">{charDetails.description.substring(0, 60)}</div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            )
+          })}
         </MapContainer>
       </div>
 
-      {/* Add Event Modal */}
-      {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{ zIndex: 9999 }}>
-          <div className="bg-white p-6 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ zIndex: 10000 }}>
-            <h2 className="text-2xl font-bold mb-4">Add Historical Event</h2>
-            
-            <input
-              type="text"
-              placeholder="Event Title"
-              value={formData.title}
-              onChange={e => setFormData({ ...formData, title: e.target.value })}
-              className="w-full p-2 border rounded mb-3"
-            />
-
-            <input
-              type="date"
-              value={formData.date}
-              onChange={e => setFormData({ ...formData, date: e.target.value })}
-              className="w-full p-2 border rounded mb-3"
-            />
-
-            <textarea
-              placeholder="Description"
-              value={formData.description}
-              onChange={e => setFormData({ ...formData, description: e.target.value })}
-              className="w-full p-2 border rounded mb-3 resize-none"
-              rows={3}
-            />
-
-            {/* Historical Figures / Characters Section */}
-            <div className="mb-3 p-2 border rounded bg-blue-50">
-              <label className="block text-sm font-bold mb-2">Historical Figures</label>
-              
-              <input
-                type="text"
-                placeholder="Name"
-                value={newCharacterName}
-                onChange={e => setNewCharacterName(e.target.value)}
-                className="w-full p-2 border rounded mb-2 text-sm"
-              />
-              <input
-                type="text"
-                placeholder="Description (optional)"
-                value={newCharacterDescription}
-                onChange={e => setNewCharacterDescription(e.target.value)}
-                className="w-full p-2 border rounded mb-2 text-sm"
-              />
-              <input
-                type="url"
-                placeholder="Image URL (optional)"
-                value={newCharacterImageUrl}
-                onChange={e => setNewCharacterImageUrl(e.target.value)}
-                className="w-full p-2 border rounded mb-2 text-sm"
-              />
-              <button
-                onClick={handleAddCharacter}
-                className="w-full bg-blue-500 text-white p-2 rounded text-sm hover:bg-blue-600 font-semibold"
-              >
-                Add Figure
-              </button>
-
-              {/* List of added characters */}
-              {characterList.length > 0 && (
-                <div className="mt-3 max-h-32 overflow-y-auto">
-                  {characterList.map((char, idx) => (
-                    <div key={idx} className="flex justify-between items-start bg-white p-2 rounded mb-1 text-xs">
-                      <div className="flex-1">
-                        <strong>{char.name}</strong>
-                        {char.description && <div className="text-gray-600">{char.description}</div>}
-                        {char.image_url && <div className="text-blue-600 truncate">{char.image_url}</div>}
-                      </div>
-                      <button
-                        onClick={() => handleRemoveCharacter(idx)}
-                        className="ml-2 text-red-600 hover:text-red-800 font-bold"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Frame selector */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium mb-1">Frame</label>
-              <select
-                value={selectedFrameId || ''}
-                onChange={e => setSelectedFrameId(e.target.value || null)}
-                className="w-full p-2 border rounded"
-              >
-                <option value="">(No frame)</option>
-                {frames.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Create frame - only visible to super users */}
-            {currentProfile?.role === 'super_user' && (
-              <div className="mb-3 p-2 border rounded bg-gray-50">
-                <label className="block text-sm font-medium mb-1">Create new frame (super users)</label>
-                <input
-                  type="text"
-                  placeholder="Frame name"
-                  value={newFrameName}
-                  onChange={e => setNewFrameName(e.target.value)}
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <input
-                  type="text"
-                  placeholder="Short description"
-                  value={newFrameDescription}
-                  onChange={e => setNewFrameDescription(e.target.value)}
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <div className="flex gap-2">
-                  <button onClick={handleCreateFrame} className="flex-1 bg-green-600 text-white p-2 rounded">Create Frame</button>
-                </div>
-              </div>
-            )}
-
-            <p className="text-sm text-gray-600 mb-4 bg-gray-100 p-2 rounded">
-              📍 Location: {formData.lat.toFixed(4)}, {formData.lng.toFixed(4)}
-            </p>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleSubmit}
-                className="flex-1 bg-blue-500 text-white p-2 rounded hover:bg-blue-600 font-semibold"
-              >
-                Submit for Approval
-              </button>
-              <button
-                onClick={() => setShowAddForm(false)}
-                className="flex-1 bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+      {showEventForm && newEventLat && newEventLng && (
+        <EventForm
+          lat={newEventLat}
+          lng={newEventLng}
+          onClose={() => {
+            setShowEventForm(false)
+            setNewEventLat(null)
+            setNewEventLng(null)
+          }}
+          onSuccess={() => {
+            const refresh = async () => {
+              try {
+                const [eventsData, framesData, charactersData] = await Promise.all([
+                  api.getEvents(),
+                  api.getFrames(),
+                  api.getCharacters()
+                ])
+                setEvents(eventsData || [])
+                setFrames(framesData || [])
+                setCharacters(charactersData || [])
+              } catch (error) {
+                console.error('Error refreshing data:', error)
+              }
+              setShowEventForm(false)
+              setNewEventLat(null)
+              setNewEventLng(null)
+            }
+            refresh()
+          }}
+          frames={frames}
+          onFrameCreated={async () => {
+            const framesData = await api.getFrames()
+            setFrames(framesData || [])
+          }}
+        />
       )}
     </div>
   )

@@ -1,109 +1,108 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { api, auth } from '@/lib/api'
 import { HistoricalEvent } from '../types'
 import Navbar from '../components/Navbar'
+import AdminNav from '../components/AdminNav'
+import { useRouter } from 'next/navigation'
+import { t } from '@/app/lib/i18n'
 
 export default function AdminPanel() {
   const [pendingEvents, setPendingEvents] = useState<HistoricalEvent[]>([])
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [frames, setFrames] = useState<any[]>([])
   const [userRole, setUserRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const router = useRouter()
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setCurrentUser(user)
+      const user = auth.getUser()
       
       if (user) {
-        // Check user role
-        const { data } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        
-        if (data) {
-          setUserRole(data.role)
-        }
-
-        if (data?.role === 'super_user') {
+        setUserRole(user.role || 'regular')
+        if (user.role === 'curator' || user.role === 'super_user') {
           fetchPendingEvents()
+          fetchFrames()
+        } else {
+          router.push('/map')
         }
+      } else {
+        router.push('/auth')
       }
       setLoading(false)
     }
-    
+
     checkAuth()
-  }, [])
+  }, [router])
 
   const fetchPendingEvents = async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select(`
-        *,
-        users:user_id(email, full_name)
-      `)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false })
-    
-    if (error) {
-      console.error('Error fetching pending events:', error)
-    } else {
-      console.log('Fetched pending events:', data)
+    try {
+      const data = await api.getPendingEvents()
       setPendingEvents(data || [])
+    } catch (error) {
+      console.error('Error fetching pending events:', error)
+    }
+  }
+
+  const fetchFrames = async () => {
+    try {
+      const data = await api.getFrames()
+      setFrames(data || [])
+    } catch (error) {
+      console.error('Error fetching frames:', error)
     }
   }
 
   const approveEvent = async (eventId: string) => {
-    const { error } = await supabase
-      .from('events')
-      .update({ status: 'approved' })
-      .eq('id', eventId)
-    
-    if (error) {
+    try {
+      await api.approveEvent(eventId)
+      fetchPendingEvents()
+    } catch (error) {
       console.error('Error approving event:', error)
       alert('Error approving event')
-    } else {
-      alert('Event approved!')
-      fetchPendingEvents()
     }
   }
 
   const rejectEvent = async (eventId: string) => {
-    const { error } = await supabase
-      .from('events')
-      .delete()
-      .eq('id', eventId)
-    
-    if (error) {
-      console.error('Error rejecting event:', error)
-      alert('Error rejecting event')
-    } else {
-      alert('Event rejected!')
-      fetchPendingEvents()
+    if (confirm('¿Estás seguro de que quieres rechazar y eliminar este evento?')) {
+      try {
+        await api.deleteEvent(eventId)
+        fetchPendingEvents()
+      } catch (error) {
+        console.error('Error rejecting event:', error)
+        alert('Error rejecting event')
+      }
     }
   }
 
-  if (loading) {
-    return <div className="p-8">Loading...</div>
+  const getFrameName = (frameId: string) => {
+    const frame = frames.find(f => f.id === frameId)
+    return frame ? frame.name : 'Sin marco'
   }
 
-  if (!currentUser) {
+  const isSuperUser = userRole === 'super_user'
+
+  if (loading) {
     return (
       <>
         <Navbar />
-        <div className="p-8">Please log in</div>
+        <main className="p-8">
+          <div className="text-center py-8">{t('loading')}</div>
+        </main>
       </>
     )
   }
 
-  if (userRole !== 'super_user') {
+  if (userRole !== 'curator' && userRole !== 'super_user') {
     return (
       <>
         <Navbar />
-        <div className="p-8 text-red-600">You don&apos;t have permission to access this page</div>
+        <main className="p-8">
+          <div className="text-center py-8 text-red-600">
+            {t('accessDenied')}
+          </div>
+        </main>
       </>
     )
   }
@@ -111,69 +110,101 @@ export default function AdminPanel() {
   return (
     <>
       <Navbar />
-      <main className="p-8 max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Admin Panel - Pending Events</h1>
-        <p className="text-gray-600 mb-8">{pendingEvents.length} pending event(s)</p>
+      <main className="p-8 max-w-6xl mx-auto">
+        <h1 className="text-3xl font-bold mb-6">{t('adminPanel')}</h1>
+        <AdminNav />
+        
+        <h2 className="text-2xl font-semibold mb-4">
+          {t('pendingEvents')} ({pendingEvents.length})
+        </h2>
         
         {pendingEvents.length === 0 ? (
-          <div className="bg-green-50 p-6 rounded text-green-800">
-            No pending events to review
+          <div className="text-center py-8 text-gray-500">
+            No hay eventos pendientes para revisar.
           </div>
         ) : (
-          <div className="grid gap-6">
-            {pendingEvents.map(event => (
-              <div key={event.id} className="border rounded-lg p-6 bg-white shadow-sm hover:shadow-md transition">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h2 className="text-2xl font-bold">{event.title}</h2>
-                    <p className="text-sm text-gray-600">
-                      Submitted by: {(event as any).users?.full_name || (event as any).users?.email}
+          <div className="space-y-4">
+            {pendingEvents.map((event: any) => (
+              <div key={event.id} className="border rounded-lg p-4 shadow-sm">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <h3 className="text-xl font-semibold">{event.title}</h3>
+                      {event.frame_id && (
+                        <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                          🏛️ {getFrameName(event.frame_id)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-600 mb-2">{event.description}</p>
+                    <p className="text-sm text-gray-500">📅 Fecha: {event.event_date}</p>
+                    <p className="text-sm text-gray-500">
+                      📍 Ubicación: {event.lat.toFixed(4)}, {event.lng.toFixed(4)}
                     </p>
-                  </div>
-                  <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
-                    Pending Review
-                  </span>
-                </div>
-
-                <p className="text-gray-700 mb-4">{event.description}</p>
-
-                <div className="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
-                  <div>
-                    <span className="font-semibold">📅 Date:</span> {event.event_date}
-                  </div>
-                  <div>
-                    <span className="font-semibold">📍 Location:</span> {event.lat.toFixed(4)}, {event.lng.toFixed(4)}
-                  </div>
-                </div>
-
-                {event.characters && event.characters.length > 0 && (
-                  <div className="bg-blue-50 p-3 rounded mb-4">
-                    <p className="font-semibold text-sm text-gray-700">
-                      👥 Historical Figures: {Array.isArray(event.characters) ? event.characters.join(', ') : event.characters}
+                    <p className="text-sm text-gray-500">
+                      👤 Enviado por: {event.users?.full_name || event.users?.email || event.user_id}
                     </p>
+                    {event.characters && Array.isArray(event.characters) && event.characters.length > 0 && (
+                      <div className="mt-2">
+                        <strong>Personajes Históricos:</strong>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {event.characters.map((char: any, idx: number) => (
+                            <span key={idx} className="bg-gray-100 px-2 py-1 rounded text-sm">
+                              {typeof char === 'string' ? char : char.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-
-                <div className="flex gap-3 pt-4 border-t">
-                  <button
-                    onClick={() => approveEvent(event.id)}
-                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-semibold transition"
-                  >
-                    ✓ Approve
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm('Are you sure you want to reject this event?')) {
-                        rejectEvent(event.id)
-                      }
-                    }}
-                    className="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 font-semibold transition"
-                  >
-                    × Reject
-                  </button>
+                  <div className="flex gap-2 ml-4">
+                    <button
+                      onClick={() => approveEvent(event.id)}
+                      className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                    >
+                      {t('approve')}
+                    </button>
+                    <button
+                      onClick={() => rejectEvent(event.id)}
+                      className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                    >
+                      {t('reject')}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {isSuperUser && (
+          <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h3 className="text-lg font-semibold text-yellow-800 mb-2">
+              🔧 Panel de Administrador
+            </h3>
+            <p className="text-sm text-yellow-700 mb-3">
+              Esta sección contiene herramientas exclusivas para administradores.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => alert('Función de backup en desarrollo')}
+                className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+              >
+                📦 Realizar Backup
+              </button>
+              <button
+                onClick={() => alert('Función de restore en desarrollo')}
+                className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+              >
+                🔄 Restaurar Backup
+              </button>
+              <button
+                onClick={() => alert('Función de configuración en desarrollo')}
+                className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+              >
+                ⚙️ Configuración
+              </button>
+            </div>
           </div>
         )}
       </main>

@@ -1,4 +1,4 @@
-// File: D:\Proj\GeoHistory\GeoHistory\app\map\page.tsx
+// File: /home/ryzenpc/projects/GeoHistory/app/map/page.tsx
 import * as entry from '../../../../app/map/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

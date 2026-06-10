@@ -1,9 +1,21 @@
 {
-  "app\\map\\page.tsx -> ../components/Map": {
-    "id": "app\\map\\page.tsx -> ../components/Map",
+  "app/admin/events/page.tsx -> ./EventsContent": {
+    "id": "app/admin/events/page.tsx -> ./EventsContent",
+    "files": [
+      "static/chunks/_app-pages-browser_app_admin_events_EventsContent_tsx.js"
+    ]
+  },
+  "app/map/page.tsx -> ../components/Map": {
+    "id": "app/map/page.tsx -> ../components/Map",
     "files": [
       "static/css/_app-pages-browser_app_components_Map_tsx.css",
       "static/chunks/_app-pages-browser_app_components_Map_tsx.js"
+    ]
+  },
+  "app/timeline/page.tsx -> ./TimelineContent": {
+    "id": "app/timeline/page.tsx -> ./TimelineContent",
+    "files": [
+      "static/chunks/_app-pages-browser_app_timeline_TimelineContent_tsx.js"
     ]
   }
 }
