@@ -1,6 +1,6 @@
 # GeoHistory
 
-A collaborative web application to map historical events on a global map. Users can contribute events that are reviewed by super users before appearing on the map and timeline.
+A collaborative web application to map historical events on a global map. Users can contribute events that are reviewed by Curator users before appearing on the map and timeline.
 
 ## Features
 
