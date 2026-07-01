@@ -2,27 +2,26 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { api, auth } from '@/lib/api'
-import Navbar from '@/app/components/Navbar'
-import AdminNav from '@/app/components/AdminNav'
+import Navbar from '@/app/components/layout/Navbar'
+import AdminNav from '@/app/components/layout/AdminNav'
 import { useRouter } from 'next/navigation'
 import { t } from '@/app/lib/i18n'
-import OptimizedImage from '@/app/components/OptimizedImage'
 
 const formatDateDisplay = (dateString: string) => {
   if (!dateString) return ''
-  const [year, month, day] = dateString.split('T')[0].split('-')
+  const datePart = dateString.split('T')[0] || ''
+  const [year = '', month = '', day = ''] = datePart.split('-')
   return `${day}/${month}/${year}`
 }
 
 const formatDateForInput = (utcDateString: string) => {
   if (!utcDateString) return ''
-  return utcDateString.split('T')[0]
+  return utcDateString.split('T')[0] || ''
 }
 
 export default function EventsContent() {
   const [events, setEvents] = useState<any[]>([])
   const [frames, setFrames] = useState<any[]>([])
-  const [characters, setCharacters] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [editingEvent, setEditingEvent] = useState<any>(null)
   const [showForm, setShowForm] = useState(false)
@@ -69,10 +68,12 @@ export default function EventsContent() {
         setFrames(framesData || [])
         setAllCharacters(charactersData || [])
         
-        const years = [...new Set(
-          (eventsData || [])
-            .map(e => new Date(e.event_date).getFullYear())
-        )].sort((a, b) => a - b)
+        const years = Array.from(
+          new Set<number>(
+            (eventsData || [])
+              .map((e: any) => new Date(e.event_date).getFullYear())
+          )
+        ).sort((a, b) => a - b)
         setAvailableYears(years)
       }
     } catch (error) {
@@ -112,22 +113,22 @@ export default function EventsContent() {
     })
 
   const handleAddCharacter = (character: any) => {
-    if (!selectedCharacters.find(c => c.id === character.id)) {
+    if (!selectedCharacters.find((c: any) => c.id === character.id)) {
       const updated = [...selectedCharacters, character]
       setSelectedCharacters(updated)
       setFormData({
         ...formData,
-        characters: updated.map(c => c.name).join(', ')
+        characters: updated.map((c: any) => c.name).join(', ')
       })
     }
   }
 
   const handleRemoveCharacter = (characterId: string) => {
-    const updated = selectedCharacters.filter(c => c.id !== characterId)
+    const updated = selectedCharacters.filter((c: any) => c.id !== characterId)
     setSelectedCharacters(updated)
     setFormData({
       ...formData,
-      characters: updated.map(c => c.name).join(', ')
+      characters: updated.map((c: any) => c.name).join(', ')
     })
   }
 
@@ -135,14 +136,19 @@ export default function EventsContent() {
     if (!newCharacterName.trim()) return
     
     try {
-      const result = await api.createCharacter(newCharacterName, newCharacterDesc, newCharacterImageUrl || null)
+      const result = await api.createCharacter(
+        newCharacterName,
+        undefined,
+        newCharacterDesc,
+        newCharacterImageUrl || undefined,
+      )
       const newChar = result.character || result
       setAllCharacters([...allCharacters, newChar])
       const updated = [...selectedCharacters, newChar]
       setSelectedCharacters(updated)
       setFormData({
         ...formData,
-        characters: updated.map(c => c.name).join(', ')
+        characters: updated.map((c: any) => c.name).join(', ')
       })
       setNewCharacterName('')
       setNewCharacterDesc('')
@@ -190,7 +196,7 @@ export default function EventsContent() {
       frame_id: event.frame_id || '',
       lat: event.lat.toString(),
       lng: event.lng.toString(),
-      characters: eventCharacters.map(c => c.name).join(', ')
+      characters: eventCharacters.map((c: any) => c.name).join(', ')
     })
     setShowForm(true)
   }
@@ -198,7 +204,7 @@ export default function EventsContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const charactersArray = selectedCharacters.map(c => ({ name: c.name, id: c.id }))
+      const charactersArray = selectedCharacters.map((c: any) => ({ name: c.name, id: c.id }))
       
       const eventData = {
         title: formData.title,
@@ -403,7 +409,7 @@ export default function EventsContent() {
 
                     <select
                       onChange={e => {
-                        const char = allCharacters.find(c => c.id === e.target.value)
+                        const char = allCharacters.find((c: any) => c.id === e.target.value)
                         if (char) handleAddCharacter(char)
                         e.target.value = ''
                       }}
@@ -412,7 +418,7 @@ export default function EventsContent() {
                     >
                       <option value="">{t('addCharacter')}</option>
                       {allCharacters
-                        .filter(char => !selectedCharacters.find(c => c.id === char.id))
+                        .filter((char: any) => !selectedCharacters.find((c: any) => c.id === char.id))
                         .map(char => (
                           <option key={char.id} value={char.id}>
                             {char.name} {char.description ? `- ${char.description.substring(0, 50)}` : ''}

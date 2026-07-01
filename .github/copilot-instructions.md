@@ -1,51 +1,223 @@
-- [x] Verify that the copilot-instructions.md file in the .github directory is created. <!-- File created -->
+# GeoHistory Project Guidelines
 
-- [x] Clarify Project Requirements <!-- Collaborative historical events mapping with user roles, full dates, timeline filtering -->
+> **Project Status**: Undergoing comprehensive refactoring (Phase 1-5). See [specs/](../specs/) for architecture, security, features, design, and operations specifications.
 
-- [x] Scaffold the Project <!-- Created Next.js project with TypeScript, Tailwind, Leaflet, Supabase -->
+## Architecture Overview
 
-- [x] Customize the Project <!-- Added interactive map with right-click events, timeline bar, user auth, admin panel, role-based access -->
+**Tech Stack**:
+- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS, Leaflet
+- **Backend**: Express.js, Node.js 18+, PostgreSQL (Docker)
+- **Auth**: JWT with refresh token rotation (stateless, no sessions)
+- **Deployment**: Docker Compose (local dev & production-ready)
 
-- [x] Install Required Extensions <!-- No extensions needed -->
+**Key Points**:
+- All data stored in PostgreSQL (running in Docker locally)
+- Backend uses modular route handlers, services, and repositories
+- Frontend uses component-based architecture with error boundaries
+- Role-based access control (user, curator, super_user)
+- No external SaaS dependencies (auth, database, etc.)
 
-- [x] Compile the Project <!-- Project builds successfully -->
+---
 
-- [x] Create and Run Task <!-- Development server running -->
+## Getting Started (Local Development)
 
-- [x] Launch the Project <!-- App at http://localhost:3000 -->
+### Prerequisites
+- WSL 2 + Ubuntu 20.04 LTS (Windows users)
+- Docker Desktop with WSL 2 integration
+- Node.js 18 LTS
+- Git
 
-- [x] Ensure Documentation is Complete <!-- Full README with setup instructions -->
+### Quick Start
 
-## IMPORTANTE: Actualizar políticas RLS en Supabase
+```bash
+# 1. Clone and enter directory
+git clone <repo-url>
+cd GeoHistory
 
-Ejecuta esto en Supabase SQL Editor para que los usuarios puedan crear sus propios registros:
+# 2. Create environment file
+cp .env.example .env
 
-```sql
-DROP POLICY IF EXISTS "Users can read all profiles" ON users;
-DROP POLICY IF EXISTS "Authenticated users can insert events" ON events;
-DROP POLICY IF EXISTS "Super users can update events" ON events;
-DROP POLICY IF EXISTS "Anyone can read characters" ON characters;
+# 3. Start Docker containers
+docker-compose up -d
 
-CREATE POLICY "Users can read all profiles" ON users
-  FOR SELECT USING (true);
+# 4. Wait for database to be ready (10-15 seconds)
+sleep 15
 
-CREATE POLICY "Authenticated users can insert their own profile" ON users
-  FOR INSERT WITH CHECK (auth.uid() = id);
+# 5. Initialize database schema
+docker-compose exec db psql -U postgres -d geohistory < db/schema.sql
 
-CREATE POLICY "Authenticated users can update their own profile" ON users
-  FOR UPDATE USING (auth.uid() = id);
+# 6. Install dependencies
+npm install
 
-CREATE POLICY "Authenticated users can insert events" ON events
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Super users can update events" ON events
-  FOR UPDATE USING (
-    (SELECT role FROM users WHERE id = auth.uid()) = 'super_user'
-  );
-
-CREATE POLICY "Anyone can read characters" ON characters
-  FOR SELECT USING (true);
+# 7. Start dev server
+npm run dev
 ```
+
+**Verify**:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:3001/api/health
+- Database: PostgreSQL on localhost:5432
+
+See [specs/Operations.md § 1](../specs/Operations.md#1-development-environment-setup) for detailed setup.
+
+---
+
+## Project Structure
+
+**Key Directories**:
+- `specs/` — Architecture specifications (Constitution, Security, Features, Design, Operations)
+- `app/` — Next.js frontend (pages, components, hooks)
+- `backend/src/` — Express backend (routes, services, repositories)
+- `db/` — Database schema and migrations
+- `_backup/` — Archived legacy files (cleanup after refactoring verified)
+
+See [specs/Constitution.md § 4.1](../specs/Constitution.md#41-root-level-organization) for full structure.
+
+---
+
+## Development Patterns
+
+### Backend: Adding a New API Endpoint
+
+1. **Define types** in `backend/src/types/`
+2. **Create repository** in `backend/src/repositories/` (database queries)
+3. **Create service** in `backend/src/services/` (business logic)
+4. **Create route** in `backend/src/routes/` (API handler)
+5. **Reference** in `backend/src/index.ts`
+
+Example: `POST /api/events/approve`
+- Repository: `EventRepository.updateStatus(eventId, 'approved')`
+- Service: `EventService.approveEvent(eventId, curatorId)` (validates permission)
+- Route: `router.post('/:id/approve', authMiddleware, approveEventHandler)`
+
+See [specs/Constitution.md § 5.3](../specs/Constitution.md#53-feature-development-workflow).
+
+### Frontend: Adding a Component
+
+1. **Determine type**: Atomic (common/), Feature (features/), or Layout (layout/)
+2. **Create file** with PascalCase name (e.g., `EventCard.tsx`)
+3. **Export interface** for props (TypeScript)
+4. **Export from barrel** in `app/components/index.ts`
+5. **Use in pages** via `import { EventCard } from '@/components'`
+
+See [specs/Design.md § 2.1](../specs/Design.md#21-component-organization).
+
+---
+
+## Authentication & Permissions
+
+**Authentication**:
+- JWT access token (15 min expiry, stored in memory)
+- JWT refresh token (7 days, httpOnly cookie, rotated on use)
+- Endpoint: `POST /api/auth/login` with email/password
+
+**Authorization**:
+- Roles: `user` (default), `curator` (approves events), `super_user` (admin)
+- Enforced via `PermissionService` in every protected endpoint
+- Permission matrix: See [specs/Security.md § 1.2](../specs/Security.md#12-authorization-permission-checking)
+
+---
+
+## Database
+
+**Location**: `db/schema.sql` (single source of truth)
+
+**To reset database**:
+```bash
+docker-compose exec db psql -U postgres -c "DROP DATABASE geohistory; CREATE DATABASE geohistory;"
+docker-compose exec db psql -U postgres -d geohistory < db/schema.sql
+```
+
+**To seed test data** (future):
+```bash
+docker-compose exec db psql -U postgres -d geohistory < db/seeds/dev.sql
+```
+
+**To connect directly**:
+```bash
+docker-compose exec db psql -U postgres -d geohistory
+```
+
+---
+
+## Testing
+
+**Unit tests** (backend services):
+```bash
+cd backend && npm test
+```
+
+**Integration tests** (API endpoints):
+```bash
+npm run test:integration
+```
+
+**E2E tests** (full workflow):
+```bash
+npm run test:e2e
+```
+
+Target: **80%+ code coverage** after refactoring Phase 5.
+
+---
+
+## Debugging
+
+**Backend**:
+```bash
+node --inspect backend/src/index.ts
+# Then attach debugger from VSCode
+```
+
+**Frontend**:
+- Open Chrome DevTools (F12)
+- Use React DevTools extension
+
+**Database**:
+```bash
+docker-compose logs -f db
+```
+
+---
+
+## Security Checklist
+
+Before committing:
+- [ ] No console.log of sensitive data (passwords, tokens)
+- [ ] All database queries parameterized (no string concatenation)
+- [ ] All inputs validated per [specs/Security.md § 3.1](../specs/Security.md#31-input-validation-backend)
+- [ ] No hardcoded secrets (use `.env` for all secrets)
+- [ ] TypeScript strict mode passes (`tsc --noEmit`)
+- [ ] ESLint passes (`npm run lint`)
+
+---
+
+## Common Tasks
+
+| Task | Command |
+|------|---------|
+| Start dev server | `npm run dev` |
+| Build for production | `npm run build` |
+| Run tests | `npm test` |
+| Lint code | `npm run lint` |
+| Format code | `npm run format` |
+| View backend logs | `docker-compose logs -f backend` |
+| Reset database | `npm run db:reset` |
+| SSH into DB | `docker-compose exec db bash` |
+
+---
+
+## Documentation
+
+**Specs** (start here):
+1. [specs/Constitution.md](../specs/Constitution.md) — Architecture & tech stack
+2. [specs/Security.md](../specs/Security.md) — Auth, permissions, data protection
+3. [specs/Features.md](../specs/Features.md) — API endpoints & workflows
+4. [specs/Design.md](../specs/Design.md) — Component patterns & UI standards
+5. [specs/Operations.md](../specs/Operations.md) — Deployment, logging, DX
+
+**Implementation**:
+- [specs/IMPLEMENTATION_PLAN.md](../specs/IMPLEMENTATION_PLAN.md) — 5-phase refactoring roadmap
 
 ## Execution Guidelines
 PROGRESS TRACKING:

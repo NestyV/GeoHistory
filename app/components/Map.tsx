@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { api, auth } from '@/lib/api'
@@ -16,6 +16,12 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
+
+const formatDateDMY = (dateString: string) => {
+  if (!dateString) return ''
+  const [year, month, day] = dateString.split('T')[0].split('-')
+  return `${day}/${month}/${year}`
+}
 
 function MapEventManager({ onAddEvent, onMapMove }: { 
   onAddEvent: (lat: number, lng: number) => void
@@ -55,16 +61,20 @@ export default function Map() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [years, setYears] = useState<number[]>([])
   
+  // Estado para controlar el popup (click) y tooltip (hover)
+  const [activePopup, setActivePopup] = useState<string | null>(null)
+  const [hoveredEvent, setHoveredEvent] = useState<string | null>(null)
+  
   const [mapCenter, setMapCenter] = useState<[number, number]>([20, 0])
   const [mapZoom, setMapZoom] = useState<number>(2)
   const [userSelectedYear, setUserSelectedYear] = useState(false)
   
-  const refreshInterval = useRef<NodeJSoudTimeout | null>(null)
+  const refreshInterval = useRef<NodeJS.Timeout | null>(null)
   const isMounted = useRef(true)
   const dataLoaded = useRef(false)
-  const saveTimeout = useRef<NodeJSoudTimeout>()
+  const saveTimeout = useRef<NodeJS.Timeout>()
+  const mapRef = useRef<L.Map | null>(null)
 
-  // Función para guardar preferencias
   const savePreferences = async () => {
     const token = localStorage.getItem('auth_token')
     if (!token || !currentUser) return
@@ -86,13 +96,11 @@ export default function Map() {
         },
         body: JSON.stringify(payload)
       })
-      console.log('💾 Preferencias guardadas:', payload)
     } catch (error) {
       console.error('Error saving preferences:', error)
     }
   }
 
-  // Función para cargar preferencias
   const loadPreferences = async () => {
     const token = localStorage.getItem('auth_token')
     if (!token) return null
@@ -111,20 +119,17 @@ export default function Map() {
     return null
   }
 
-  // Cargar usuario
   useEffect(() => {
     const user = auth.getUser()
     setCurrentUser(user)
   }, [])
 
-  // Cargar datos y preferencias
   useEffect(() => {
     if (!currentUser) return
     
     const init = async () => {
       setLoading(true)
       
-      // Cargar datos
       const [eventsData, framesData, charactersData] = await Promise.all([
         api.getEvents(),
         api.getFrames(),
@@ -135,7 +140,6 @@ export default function Map() {
       setFrames(framesData || [])
       setCharacters(charactersData || [])
       
-      // Cargar preferencias
       const prefs = await loadPreferences()
       
       if (prefs) {
@@ -164,7 +168,6 @@ export default function Map() {
     
     init()
     
-    // Refresh periódico de datos
     refreshInterval.current = setInterval(async () => {
       if (isMounted.current) {
         try {
@@ -188,7 +191,6 @@ export default function Map() {
     }
   }, [currentUser])
 
-  // Guardar preferencias cuando cambian (con debounce)
   useEffect(() => {
     if (!dataLoaded.current || !currentUser) return
     
@@ -258,15 +260,30 @@ export default function Map() {
 
   const getCharacterDetails = (characterName: string) => {
     const character = characters.find(c => c.name === characterName)
-    return character || { name: characterName, image_url: null, description: '' }
+    return character || { name: characterName, alias: null, image_url: null, description: '' }
   }
 
-  const formatCharacterList = (characterNames: string[]) => {
+  // Para el tooltip (hover): muestra nombre + alias si existe
+  const getTooltipDisplayName = (characterName: string) => {
+    const details = getCharacterDetails(characterName)
+    if (details.alias) {
+      return `${details.name} (${details.alias})`
+    }
+    return details.name
+  }
+
+  // Para el popup (click): SOLO el alias, o el nombre si no tiene alias
+  const getPopupDisplayName = (characterName: string) => {
+    const details = getCharacterDetails(characterName)
+    return details.alias || details.name
+  }
+
+  const formatTooltipCharacterList = (characterNames: string[]) => {
     if (characterNames.length === 0) return null
-    if (characterNames.length === 1) return characterNames[0]
-    if (characterNames.length === 2) return characterNames.join(' & ')
-    if (characterNames.length === 3) return characterNames.join(', ')
-    return `${characterNames.slice(0, 2).join(', ')} & ${characterNames.length - 2} ${t('more')}`
+    if (characterNames.length === 1) return getTooltipDisplayName(characterNames[0])
+    if (characterNames.length === 2) return characterNames.map(n => getTooltipDisplayName(n)).join(' & ')
+    if (characterNames.length === 3) return characterNames.map(n => getTooltipDisplayName(n)).join(', ')
+    return `${characterNames.slice(0, 2).map(n => getTooltipDisplayName(n)).join(', ')} & ${characterNames.length - 2} ${t('more')}`
   }
 
   const filteredEvents = events.filter(e => {
@@ -279,6 +296,68 @@ export default function Map() {
     return true
   })
 
+  // Handlers para exclusión mutua
+  const handleMarkerClick = (eventId: string) => {
+    if (activePopup === eventId) {
+      setActivePopup(null)
+    } else {
+      setActivePopup(eventId)
+      setHoveredEvent(null) // Cerrar tooltip si estaba abierto
+    }
+  }
+
+  const handleMarkerHover = (eventId: string) => {
+    if (!activePopup) {
+      setHoveredEvent(eventId)
+    }
+  }
+
+  const handleMarkerLeave = () => {
+    setHoveredEvent(null)
+  }
+
+  const handleClosePopup = () => {
+    setActivePopup(null)
+  }
+
+  // Renderizar tooltip personalizado (no de Leaflet)
+  const renderCustomTooltip = (event: any) => {
+    if (hoveredEvent !== event.id) return null
+    
+    const characterNames = event.characters?.map((c: any) => typeof c === 'string' ? c : c.name) || []
+    const formattedCharacters = formatTooltipCharacterList(characterNames)
+    
+    const placeDisplayText = event.place_name 
+      ? `${event.place_type_icon || '📍'} ${event.place_name}`
+      : `📍 ${event.lat.toFixed(4)}, ${event.lng.toFixed(4)}`
+    
+    // Obtener coordenadas de pantalla para posicionar el tooltip
+    if (!mapRef.current) return null
+    const point = mapRef.current.latLngToContainerPoint(L.latLng(event.lat, event.lng))
+    
+    return (
+      <div
+        className="fixed z-[10000] bg-white px-3 py-2 rounded shadow-lg border border-gray-200 text-sm pointer-events-none"
+        style={{
+          top: point.y - 80,
+          left: point.x - 110,
+          minWidth: '120px',
+          maxWidth: '220px',
+          transform: 'translateX(-50%)',
+        }}
+      >
+        <div className="font-bold">{event.title}</div>
+        <div className="text-xs text-gray-600">📅 {formatDateDMY(event.event_date)}</div>
+        <div className="text-xs text-gray-600">{placeDisplayText}</div>
+        {formattedCharacters && (
+          <div className="text-xs mt-1">
+            <span className="font-semibold">{t('figures')}:</span> {formattedCharacters}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -289,6 +368,25 @@ export default function Map() {
 
   return (
     <div className="relative h-full w-full flex flex-col">
+      <style jsx global>{`
+        .leaflet-popup-content {
+          max-height: 350px !important;
+          overflow-y: auto !important;
+          margin: 8px 12px !important;
+        }
+        .leaflet-popup-content-wrapper {
+          max-width: 320px !important;
+          min-width: 260px !important;
+        }
+        .leaflet-marker-icon {
+          z-index: 1 !important;
+          cursor: pointer !important;
+        }
+        .leaflet-marker-icon:hover {
+          z-index: 1001 !important;
+        }
+      `}</style>
+      
       {frames.length > 0 && (
         <div className="bg-white border-b border-gray-200 shadow-sm z-10 flex-shrink-0">
           <div className="px-2 py-1">
@@ -361,6 +459,7 @@ export default function Map() {
 
       <div className="flex-1 relative">
         <MapContainer
+          ref={mapRef}
           key={`${mapCenter[0]}-${mapCenter[1]}-${mapZoom}`}
           center={mapCenter}
           zoom={mapZoom}
@@ -376,76 +475,79 @@ export default function Map() {
           
           {filteredEvents.map(event => {
             const characterNames = event.characters?.map((c: any) => typeof c === 'string' ? c : c.name) || []
-            const formattedCharacters = formatCharacterList(characterNames)
-            
+            const isPopupActive = activePopup === event.id
+
             return (
               <Marker
                 key={event.id}
                 position={[event.lat, event.lng]}
+                eventHandlers={{
+                  click: () => handleMarkerClick(event.id),
+                  mouseover: () => handleMarkerHover(event.id),
+                  mouseout: handleMarkerLeave,
+                }}
               >
-                <Tooltip 
-                  direction="top" 
-                  offset={[0, -20]} 
-                  opacity={1}
-                  permanent={false}
-                  sticky={false}
-                  interactive={false}
+                {/* Popup nativo de Leaflet (solo click) */}
+                <Popup
+                  open={isPopupActive}
+                  autoPan={false}
+                  closeOnClick={false}
                 >
-                  <div style={{ 
-                    fontSize: '12px', 
-                    minWidth: '120px', 
-                    maxWidth: '220px',
-                    whiteSpace: 'normal',
-                    wordWrap: 'break-word'
-                  }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>{event.title}</div>
-                    <div style={{ fontSize: '10px', color: '#666' }}>📅 {new Date(event.event_date).getFullYear()}</div>
-                    {formattedCharacters && (
-                      <div style={{ fontSize: '10px', marginTop: '4px' }}>
-                        <span style={{ fontWeight: 'bold' }}>{t('figures')}:</span> {formattedCharacters}
-                      </div>
-                    )}
-                  </div>
-                </Tooltip>
-                
-                <Popup>
-                  <div className="max-w-xs">
-                    <strong className="text-lg">{event.title}</strong><br />
-                    <span className="text-sm text-gray-600">📅 {new Date(event.event_date).toLocaleDateString()}</span><br />
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <strong className="text-lg">{event.title}</strong>
+                      <button
+                        onClick={handleClosePopup}
+                        className="text-gray-500 hover:text-gray-700 ml-2 text-lg"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <span className="text-sm text-gray-600">📅 {formatDateDMY(event.event_date)}</span>
                     {event.description && (
-                      <em className="text-sm text-gray-700">{event.description.substring(0, 150)}</em>
-                    )}<br />
+                      <p className="text-sm text-gray-700 mt-1">{event.description.substring(0, 150)}</p>
+                    )}
+                    
+                    <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                      {event.place_name ? (
+                        <>
+                          <strong>{event.place_type_name || 'Lugar'}:</strong> {event.place_name}
+                          {event.place_previous_name && (
+                            <div className="text-xs text-gray-500 mt-1">Anteriormente: {event.place_previous_name}</div>
+                          )}
+                        </>
+                      ) : (
+                        <span>📍 {event.lat.toFixed(4)}, {event.lng.toFixed(4)}</span>
+                      )}
+                    </div>
+                    
                     {event.frame_id && (
                       <div className="text-xs text-gray-500 mt-1">
                         🏛️ {t('historicalFrame')}: {frames.find(f => f.id === event.frame_id)?.name || 'Desconocido'}
                       </div>
                     )}
+                    
                     {event.characters && event.characters.length > 0 && (
                       <>
                         <hr className="my-2" />
                         <strong className="text-sm">{t('historicalFigures')}:</strong>
-                        <div className="mt-2 space-y-2">
-                          {event.characters.map((c: any, i: number) => {
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {event.characters.slice(0, 3).map((c: any, i: number) => {
                             const charName = typeof c === 'string' ? c : c.name
+                            const displayName = getPopupDisplayName(charName)
                             const charDetails = getCharacterDetails(charName)
                             return (
-                              <div key={i} className="flex items-center gap-2">
+                              <span key={i} className="bg-gray-100 px-2 py-1 rounded text-xs flex items-center gap-1">
                                 {charDetails.image_url && (
-                                  <OptimizedImage 
-                                    src={charDetails.image_url} 
-                                    alt={charName} 
-                                    className="w-8 h-8 rounded-full object-cover border border-gray-300"
-                                  />
+                                  <img src={charDetails.image_url} alt={charName} className="w-4 h-4 rounded-full" />
                                 )}
-                                <div className="flex-1">
-                                  <div className="text-sm font-medium">{charName}</div>
-                                  {charDetails.description && (
-                                    <div className="text-xs text-gray-500">{charDetails.description.substring(0, 60)}</div>
-                                  )}
-                                </div>
-                              </div>
+                                {displayName}
+                              </span>
                             )
                           })}
+                          {event.characters.length > 3 && (
+                            <span className="text-xs text-gray-500">+ {event.characters.length - 3} más</span>
+                          )}
                         </div>
                       </>
                     )}
@@ -455,6 +557,9 @@ export default function Map() {
             )
           })}
         </MapContainer>
+        
+        {/* Tooltip personalizado (hover) renderizado fuera del mapa */}
+        {filteredEvents.map(event => renderCustomTooltip(event))}
       </div>
 
       {showEventForm && newEventLat && newEventLng && (

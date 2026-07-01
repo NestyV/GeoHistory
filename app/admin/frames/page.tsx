@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { api, auth } from '@/lib/api'
-import Navbar from '@/app/components/Navbar'
-import AdminNav from '@/app/components/AdminNav'
+import Navbar from '@/app/components/layout/Navbar'
+import AdminNav from '@/app/components/layout/AdminNav'
 import { useRouter } from 'next/navigation'
 import { t } from '@/app/lib/i18n'
 

@@ -21,7 +21,7 @@ export default function Auth() {
 
     try {
       if (isSignUp) {
-        const { user, token, error: signUpError } = await auth.signUp(
+        const { user, error: signUpError } = await auth.signUp(
           email, 
           password, 
           fullName

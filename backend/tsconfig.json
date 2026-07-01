@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["es2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "strictBindCallApply": true,
+    "alwaysStrict": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitThis": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    
+    "baseUrl": ".",
+    "ignoreDeprecations": "5.0",
+    "paths": {
+      "@/types": ["./src/types/index.ts"],
+      "@/types/*": ["./src/types/*"],
+      "@/routes": ["./src/routes/index.ts"],
+      "@/routes/*": ["./src/routes/*"],
+      "@/services": ["./src/services/index.ts"],
+      "@/services/*": ["./src/services/*"],
+      "@/repositories": ["./src/repositories/index.ts"],
+      "@/repositories/*": ["./src/repositories/*"],
+      "@/middleware": ["./src/middleware/auth.ts"],
+      "@/middleware/*": ["./src/middleware/*"],
+      "@/config": ["./src/config/index.ts"],
+      "@/config/*": ["./src/config/*"],
+      "@/utils": ["./src/utils/database.ts"],
+      "@/utils/*": ["./src/utils/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "events.ts", "server.js", "db.ts"]
+}

@@ -44,11 +44,26 @@ CREATE TABLE characters (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Create refresh tokens table for JWT rotation/revocation
+CREATE TABLE refresh_tokens (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_id TEXT UNIQUE NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  revoked_at TIMESTAMP,
+  replaced_by_token_id TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Create indices for better performance
 CREATE INDEX idx_events_user_id ON events(user_id);
 CREATE INDEX idx_events_frame_id ON events(frame_id);
 CREATE INDEX idx_events_status ON events(status);
 CREATE INDEX idx_events_event_date ON events(event_date);
+CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX idx_refresh_tokens_token_id ON refresh_tokens(token_id);
 
 -- Set up Row Level Security (RLS) policies
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;

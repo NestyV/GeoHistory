@@ -502,6 +502,45 @@ video {
 [hidden]:where(:not([hidden="until-found"])) {
   display: none;
 }
+.container {
+  width: 100%;
+}
+@media (min-width: 640px) {
+
+  .container {
+    max-width: 640px;
+  }
+}
+@media (min-width: 768px) {
+
+  .container {
+    max-width: 768px;
+  }
+}
+@media (min-width: 1024px) {
+
+  .container {
+    max-width: 1024px;
+  }
+}
+@media (min-width: 1280px) {
+
+  .container {
+    max-width: 1280px;
+  }
+}
+@media (min-width: 1536px) {
+
+  .container {
+    max-width: 1536px;
+  }
+}
+.pointer-events-none {
+  pointer-events: none;
+}
+.static {
+  position: static;
+}
 .fixed {
   position: fixed;
 }
@@ -510,9 +549,6 @@ video {
 }
 .relative {
   position: relative;
-}
-.sticky {
-  position: sticky;
 }
 .inset-0 {
   inset: 0px;
@@ -529,8 +565,11 @@ video {
 .z-50 {
   z-index: 50;
 }
-.z-\[2000\] {
-  z-index: 2000;
+.z-\[10000\] {
+  z-index: 10000;
+}
+.z-\[10001\] {
+  z-index: 10001;
 }
 .mx-auto {
   margin-left: auto;
@@ -598,17 +637,26 @@ video {
 .grid {
   display: grid;
 }
+.h-12 {
+  height: 3rem;
+}
 .h-16 {
   height: 4rem;
 }
 .h-24 {
   height: 6rem;
 }
+.h-3 {
+  height: 0.75rem;
+}
 .h-4 {
   height: 1rem;
 }
 .h-5 {
   height: 1.25rem;
+}
+.h-6 {
+  height: 1.5rem;
 }
 .h-8 {
   height: 2rem;
@@ -622,14 +670,26 @@ video {
 .max-h-\[70vh\] {
   max-height: 70vh;
 }
-.max-h-\[90vh\] {
-  max-height: 90vh;
-}
 .min-h-screen {
   min-height: 100vh;
 }
+.w-1\/2 {
+  width: 50%;
+}
+.w-1\/3 {
+  width: 33.333333%;
+}
+.w-1\/4 {
+  width: 25%;
+}
+.w-12 {
+  width: 3rem;
+}
 .w-16 {
   width: 4rem;
+}
+.w-2\/3 {
+  width: 66.666667%;
 }
 .w-20 {
   width: 5rem;
@@ -646,8 +706,8 @@ video {
 .w-5 {
   width: 1.25rem;
 }
-.w-8 {
-  width: 2rem;
+.w-5\/6 {
+  width: 83.333333%;
 }
 .w-full {
   width: 100%;
@@ -664,17 +724,20 @@ video {
 .max-w-6xl {
   max-width: 72rem;
 }
+.max-w-lg {
+  max-width: 32rem;
+}
 .max-w-md {
   max-width: 28rem;
-}
-.max-w-xs {
-  max-width: 20rem;
 }
 .flex-1 {
   flex: 1 1 0%;
 }
 .flex-shrink-0 {
   flex-shrink: 0;
+}
+.transform {
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 @keyframes pulse {
 
@@ -708,6 +771,9 @@ video {
 }
 .items-center {
   align-items: center;
+}
+.justify-end {
+  justify-content: flex-end;
 }
 .justify-center {
   justify-content: center;
@@ -769,6 +835,9 @@ video {
 .rounded-md {
   border-radius: 0.375rem;
 }
+.rounded-xl {
+  border-radius: 0.75rem;
+}
 .border {
   border-width: 1px;
 }
@@ -790,6 +859,10 @@ video {
   --tw-border-opacity: 1;
   border-color: rgb(209 213 219 / var(--tw-border-opacity, 1));
 }
+.border-red-200 {
+  --tw-border-opacity: 1;
+  border-color: rgb(254 202 202 / var(--tw-border-opacity, 1));
+}
 .border-yellow-200 {
   --tw-border-opacity: 1;
   border-color: rgb(254 240 138 / var(--tw-border-opacity, 1));
@@ -797,6 +870,9 @@ video {
 .bg-black {
   --tw-bg-opacity: 1;
   background-color: rgb(0 0 0 / var(--tw-bg-opacity, 1));
+}
+.bg-black\/40 {
+  background-color: rgb(0 0 0 / 0.4);
 }
 .bg-blue-100 {
   --tw-bg-opacity: 1;
@@ -1071,6 +1147,11 @@ video {
 .shadow-sm {
   --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+.shadow-xl {
+  --tw-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --tw-shadow-colored: 0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 .filter {
@@ -1392,6 +1473,76 @@ img {
 .leaflet-container {
   touch-action: none;
 }
+
+/* Mejorar prioridad de tooltips y popups */
+.leaflet-tooltip {
+  z-index: 1000 !important;
+}
+
+.leaflet-popup {
+  z-index: 900 !important;
+}
+
+.leaflet-marker-icon {
+  z-index: 1 !important;
+  transition: z-index 0s;
+}
+
+.leaflet-marker-icon:hover {
+  z-index: 1001 !important;
+}
+
+/* Popup con scroll si es necesario */
+.leaflet-popup-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 8px 12px;
+}
+
+/* Scrollbar personalizado para el popup */
+.leaflet-popup-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.leaflet-popup-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.leaflet-popup-content::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.leaflet-popup-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Asegurar que los tooltips estén siempre encima */
+.leaflet-tooltip {
+  z-index: 10000 !important;
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border: 1px solid #ccc !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 10000 !important;
+}
+
+.leaflet-marker-icon {
+  z-index: 1 !important;
+}
+
+.leaflet-popup {
+  z-index: 9000 !important;
+}
+
+/* Auto-pan padding para que el popup no choque con el borde */
+.leaflet-popup-pane {
+  pointer-events: auto;
+}
 .first\:rounded-t-lg:first-child {
   border-top-left-radius: 0.5rem;
   border-top-right-radius: 0.5rem;
@@ -1452,6 +1603,10 @@ img {
   --tw-text-opacity: 1;
   color: rgb(30 64 175 / var(--tw-text-opacity, 1));
 }
+.hover\:text-gray-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(55 65 81 / var(--tw-text-opacity, 1));
+}
 .hover\:text-gray-900:hover {
   --tw-text-opacity: 1;
   color: rgb(17 24 39 / var(--tw-text-opacity, 1));
@@ -1472,6 +1627,9 @@ img {
 .disabled\:bg-gray-400:disabled {
   --tw-bg-opacity: 1;
   background-color: rgb(156 163 175 / var(--tw-bg-opacity, 1));
+}
+.disabled\:opacity-60:disabled {
+  opacity: 0.6;
 }
 @media (min-width: 768px) {
 

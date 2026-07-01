@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Navbar from './components/Navbar'
+import Navbar from './components/layout/Navbar'
 import Link from 'next/link'
 import { t, getClientLanguage } from '@/app/lib/i18n'
 

@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS characters (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create refresh tokens table for JWT rotation/revocation
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_id TEXT UNIQUE NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  revoked_at TIMESTAMP,
+  replaced_by_token_id TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indices for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
@@ -59,6 +72,8 @@ CREATE INDEX IF NOT EXISTS idx_events_event_date ON events(event_date);
 CREATE INDEX IF NOT EXISTS idx_events_lat_lng ON events(lat, lng);
 CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
 CREATE INDEX IF NOT EXISTS idx_frames_start_date ON frames(start_date);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_id ON refresh_tokens(token_id);
 
 -- Insert seed data (optional demo data)
 INSERT INTO frames (name, description, start_date, end_date) VALUES

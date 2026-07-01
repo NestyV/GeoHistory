@@ -155,7 +155,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/events', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, user_id, frame_id, lat, lng, title, description, event_date, characters, status, created_at FROM events WHERE status = $1 ORDER BY event_date DESC',
+      'SELECT e.id, e.user_id, e.frame_id, e.place_id, COALESCE(e.lat, p.lat) as lat, COALESCE(e.lng, p.lng) as lng, e.title, e.description, e.event_date, e.characters, e.status, e.created_at, p.current_name as place_name, p.previous_name as place_previous_name, pt.name as place_type_name, pt.icon as place_type_icon FROM events e LEFT JOIN places p ON e.place_id = p.id LEFT JOIN place_types pt ON p.place_type_id = pt.id WHERE e.status = $1 ORDER BY e.event_date DESC',
       ['approved']
     );
     res.json(result.rows);
@@ -167,9 +167,22 @@ app.get('/api/events', async (req, res) => {
 
 app.get('/api/events/my', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT id, user_id, frame_id, lat, lng, title, description, event_date, characters, status, created_at FROM events WHERE user_id = $1 ORDER BY created_at DESC',
-      [req.user.id]
+    const result = await pool.query(`
+      SELECT 
+        e.id, e.user_id, e.frame_id, e.place_id,
+        COALESCE(e.lat, p.lat) as lat,
+        COALESCE(e.lng, p.lng) as lng,
+        e.title, e.description, e.event_date, e.characters, e.status, e.created_at,
+        p.current_name as place_name,
+        p.previous_name as place_previous_name,
+        pt.name as place_type_name,
+        pt.icon as place_type_icon
+      FROM events e
+      LEFT JOIN places p ON e.place_id = p.id
+      LEFT JOIN place_types pt ON p.place_type_id = pt.id
+      WHERE e.user_id = $1
+      ORDER BY e.created_at DESC
+      `, [req.user.id]
     );
     res.json(result.rows);
   } catch (error) {
@@ -178,20 +191,62 @@ app.get('/api/events/my', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/events - Create a new event (supports place_id or legacy lat/lng)
 app.post('/api/events', authenticateToken, async (req, res) => {
   try {
-    const { frame_id, lat, lng, title, description, event_date, characters } = req.body;
+    const { frame_id, place_id, lat, lng, title, description, event_date, characters } = req.body;
 
-    if (!lat || !lng || !title || !event_date) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!title || !event_date) {
+      return res.status(400).json({ error: 'Missing required fields: title, event_date' });
+    }
+
+    let final_place_id = place_id;
+    let final_lat = lat;
+    let final_lng = lng;
+
+    // Si no se proporcionó place_id pero se proporcionaron lat/lng, buscar o crear lugar
+    if (!final_place_id && final_lat !== undefined && final_lng !== undefined) {
+      // Buscar lugar existente cercano (radio de 100 metros aproximadamente)
+      const existingPlace = await pool.query(
+        `SELECT id FROM places
+         WHERE ABS(lat - $1) < 0.001 AND ABS(lng - $2) < 0.001
+         LIMIT 1`,
+        [final_lat, final_lng]
+      );
+
+      if (existingPlace.rows.length > 0) {
+        final_place_id = existingPlace.rows[0].id;
+      } else {
+        // Crear lugar temporal con un tipo por defecto (Ciudad)
+        const defaultPlaceType = await pool.query(
+          "SELECT id FROM place_types WHERE name = 'Ciudad' LIMIT 1"
+        );
+
+        if (defaultPlaceType.rows.length > 0) {
+          const newPlace = await pool.query(
+            `INSERT INTO places (place_type_id, current_name, lat, lng)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [defaultPlaceType.rows[0].id, `Lugar: ${title.substring(0, 50)}`, final_lat, final_lng]
+          );
+          final_place_id = newPlace.rows[0].id;
+        }
+      }
+    }
+
+    if (!final_place_id) {
+      return res.status(400).json({ error: 'Se requiere place_id o coordenadas (lat/lng)' });
     }
 
     const result = await pool.query(
-      'INSERT INTO events (user_id, frame_id, lat, lng, title, description, event_date, characters, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [req.user.id, frame_id || null, lat, lng, title, description || null, event_date, JSON.stringify(characters || []), 'pending']
+      `INSERT INTO events (user_id, frame_id, place_id, title, description, event_date, characters, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [req.user.id, frame_id || null, final_place_id, title, description || null, event_date, JSON.stringify(characters || []), 'pending']
     );
 
-    res.status(201).json({ message: 'Event created successfully (pending approval)', event: result.rows[0] });
+    res.status(201).json({
+      message: 'Event created successfully (pending approval)',
+      event: result.rows[0],
+    });
   } catch (error) {
     console.error('Error creating event:', error);
     res.status(500).json({ error: 'Server error creating event' });
@@ -283,7 +338,7 @@ app.delete('/api/events/:id', authenticateToken, async (req, res) => {
 app.get('/api/characters', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, description, image_url, created_at FROM characters ORDER BY name ASC'
+      'SELECT id, name, alias, description, image_url, created_at FROM characters ORDER BY name ASC'
     );
     res.json(result.rows);
   } catch (error) {
@@ -299,15 +354,15 @@ app.post('/api/characters', authenticateToken, async (req, res) => {
     //  return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
     //}
 
-    const { name, description, image_url } = req.body;
+    const { name, alias, description, image_url } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Name required' });
     }
 
     const result = await pool.query(
-      'INSERT INTO characters (name, description, image_url) VALUES ($1, $2, $3) RETURNING *',
-      [name, description || null, image_url || null]
+      'INSERT INTO characters (name, alias, description, image_url) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, alias || null, description || null, image_url || null]
     );
 
     res.status(201).json({ message: 'Character created successfully', character: result.rows[0] });
@@ -327,11 +382,11 @@ app.put('/api/characters/:id', authenticateToken, async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, description, image_url } = req.body;
+    const { name, alias, description, image_url } = req.body;
 
     const result = await pool.query(
-      'UPDATE characters SET name = $1, description = $2, image_url = $3 WHERE id = $4 RETURNING *',
-      [name, description || null, image_url || null, id]
+      'UPDATE characters SET name = $1, alias = $2, description = $3, image_url = $4 WHERE id = $5 RETURNING *',
+      [name, alias || null, description || null, image_url || null, id]
     );
 
     if (result.rows.length === 0) {
@@ -529,12 +584,24 @@ app.get('/api/admin/events/pending', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT e.id, e.user_id, e.frame_id, e.lat, e.lng, e.title, e.description,
-              e.event_date, e.characters, e.status, e.created_at, u.email, u.full_name
-       FROM events e
-       JOIN users u ON e.user_id = u.id
-       WHERE e.status = $1
-       ORDER BY e.created_at ASC`,
+      `
+      SELECT
+        e.id, e.user_id, e.frame_id, e.place_id,
+        COALESCE(e.lat, p.lat) as lat,
+        COALESCE(e.lng, p.lng) as lng,
+        e.title, e.description, e.event_date, e.characters, e.status, e.created_at,
+        u.email, u.full_name,
+        p.current_name as place_name,
+        p.previous_name as place_previous_name,
+        pt.name as place_type_name,
+        pt.icon as place_type_icon
+      FROM events e
+      JOIN users u ON e.user_id = u.id
+      LEFT JOIN places p ON e.place_id = p.id
+      LEFT JOIN place_types pt ON p.place_type_id = pt.id
+      WHERE e.status = $1
+      ORDER BY e.created_at ASC
+       `,
       ['pending']
     );
 
@@ -572,4 +639,340 @@ process.on('SIGINT', async () => {
   console.log('\n📍 Shutting down gracefully...');
   await pool.end();
   process.exit(0);
+});
+
+// ============================================================================
+// PLACE TYPES ENDPOINTS (CRUD)
+// ============================================================================
+
+// GET /api/place-types - Obtener todos los tipos de lugar
+app.get('/api/place-types', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, name, description, icon, created_at FROM place_types ORDER BY name ASC'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching place types:', error);
+    res.status(500).json({ error: 'Error al obtener tipos de lugar' });
+  }
+});
+
+// GET /api/place-types/:id - Obtener un tipo de lugar por ID
+app.get('/api/place-types/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT id, name, description, icon, created_at FROM place_types WHERE id = $1',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Tipo de lugar no encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching place type:', error);
+    res.status(500).json({ error: 'Error al obtener tipo de lugar' });
+  }
+});
+
+// POST /api/place-types - Crear un nuevo tipo de lugar (Curador/Admin)
+app.post('/api/place-types', authenticateToken, async (req, res) => {
+  try {
+    if (!await isAtLeastCurator(req.user.id)) {
+      return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
+    }
+    
+    const { name, description, icon } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'El nombre es requerido' });
+    }
+    
+    const result = await pool.query(
+      'INSERT INTO place_types (name, description, icon) VALUES ($1, $2, $3) RETURNING *',
+      [name, description || null, icon || null]
+    );
+    
+    res.status(201).json({ message: 'Tipo de lugar creado', place_type: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'El nombre del tipo de lugar ya existe' });
+    }
+    console.error('Error creating place type:', error);
+    res.status(500).json({ error: 'Error al crear tipo de lugar' });
+  }
+});
+
+// PUT /api/place-types/:id - Actualizar un tipo de lugar (Curador/Admin)
+app.put('/api/place-types/:id', authenticateToken, async (req, res) => {
+  try {
+    if (!await isAtLeastCurator(req.user.id)) {
+      return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
+    }
+    
+    const { id } = req.params;
+    const { name, description, icon } = req.body;
+    
+    const result = await pool.query(
+      'UPDATE place_types SET name = $1, description = $2, icon = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING *',
+      [name, description || null, icon || null, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Tipo de lugar no encontrado' });
+    }
+    
+    res.json({ message: 'Tipo de lugar actualizado', place_type: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating place type:', error);
+    res.status(500).json({ error: 'Error al actualizar tipo de lugar' });
+  }
+});
+
+// DELETE /api/place-types/:id - Eliminar un tipo de lugar (Curador/Admin)
+app.delete('/api/place-types/:id', authenticateToken, async (req, res) => {
+  try {
+    if (!await isAtLeastCurator(req.user.id)) {
+      return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
+    }
+    
+    const { id } = req.params;
+    
+    // Verificar si hay lugares usando este tipo
+    const checkResult = await pool.query(
+      'SELECT COUNT(*) FROM places WHERE place_type_id = $1',
+      [id]
+    );
+    
+    if (parseInt(checkResult.rows[0].count) > 0) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el tipo de lugar porque hay lugares asociados' 
+      });
+    }
+    
+    const result = await pool.query('DELETE FROM place_types WHERE id = $1 RETURNING id', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Tipo de lugar no encontrado' });
+    }
+    
+    res.json({ message: 'Tipo de lugar eliminado' });
+  } catch (error) {
+    console.error('Error deleting place type:', error);
+    res.status(500).json({ error: 'Error al eliminar tipo de lugar' });
+  }
+});
+
+// ============================================================================
+// PLACES ENDPOINTS (CRUD)
+// ============================================================================
+
+// GET /api/places - Obtener todos los lugares
+app.get('/api/places', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT p.id, p.current_name, p.previous_name, p.lat, p.lng, 
+             p.place_type_id, pt.name as place_type_name, pt.icon as place_type_icon,
+             p.created_at, p.updated_at
+      FROM places p
+      LEFT JOIN place_types pt ON p.place_type_id = pt.id
+      ORDER BY p.current_name ASC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching places:', error);
+    res.status(500).json({ error: 'Error al obtener lugares' });
+  }
+});
+
+// GET /api/places/nearby - Obtener lugares cercanos a una coordenada
+app.get('/api/places/nearby', async (req, res) => {
+  try {
+    const { lat, lng, radius = 10 } = req.query;
+    
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Se requieren latitud y longitud' });
+    }
+    
+    // Búsqueda por radio aproximado (en kilómetros)
+    const result = await pool.query(`
+      SELECT p.id, p.current_name, p.previous_name, p.lat, p.lng, 
+             p.place_type_id, pt.name as place_type_name, pt.icon as place_type_icon,
+             (6371 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) 
+             + sin(radians($1)) * sin(radians(lat)))) AS distance
+      FROM places p
+      LEFT JOIN place_types pt ON p.place_type_id = pt.id
+      WHERE (6371 * acos(cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2)) 
+             + sin(radians($1)) * sin(radians(lat)))) < $3
+      ORDER BY distance ASC
+    `, [lat, lng, radius]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching nearby places:', error);
+    res.status(500).json({ error: 'Error al obtener lugares cercanos' });
+  }
+});
+
+// GET /api/places/:id - Obtener un lugar por ID
+app.get('/api/places/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(`
+      SELECT p.id, p.current_name, p.previous_name, p.lat, p.lng, 
+             p.place_type_id, pt.name as place_type_name, pt.icon as place_type_icon,
+             p.created_at, p.updated_at
+      FROM places p
+      LEFT JOIN place_types pt ON p.place_type_id = pt.id
+      WHERE p.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Lugar no encontrado' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching place:', error);
+    res.status(500).json({ error: 'Error al obtener lugar' });
+  }
+});
+
+// POST /api/places - Crear un nuevo lugar (Curador/Admin)
+app.post('/api/places', authenticateToken, async (req, res) => {
+  try {
+    //if (!await isAtLeastCurator(req.user.id)) {
+    //  return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
+    //}
+    
+    const { place_type_id, current_name, previous_name, lat, lng } = req.body;
+    
+    if (!place_type_id || !current_name || lat === undefined || lng === undefined) {
+      return res.status(400).json({ error: 'Faltan campos requeridos: place_type_id, current_name, lat, lng' });
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO places (place_type_id, current_name, previous_name, lat, lng) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [place_type_id, current_name, previous_name || null, lat, lng]
+    );
+    
+    res.status(201).json({ message: 'Lugar creado', place: result.rows[0] });
+  } catch (error) {
+    console.error('Error creating place:', error);
+    res.status(500).json({ error: 'Error al crear lugar' });
+  }
+});
+
+// PUT /api/places/:id - Actualizar un lugar (Curador/Admin)
+app.put('/api/places/:id', authenticateToken, async (req, res) => {
+  try {
+    if (!await isAtLeastCurator(req.user.id)) {
+      return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
+    }
+    
+    const { id } = req.params;
+    const { place_type_id, current_name, previous_name, lat, lng } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE places SET 
+         place_type_id = $1, current_name = $2, previous_name = $3, 
+         lat = $4, lng = $5, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $6 RETURNING *`,
+      [place_type_id, current_name, previous_name || null, lat, lng, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Lugar no encontrado' });
+    }
+    
+    res.json({ message: 'Lugar actualizado', place: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating place:', error);
+    res.status(500).json({ error: 'Error al actualizar lugar' });
+  }
+});
+
+// DELETE /api/places/:id - Eliminar un lugar (Curador/Admin)
+app.delete('/api/places/:id', authenticateToken, async (req, res) => {
+  try {
+    if (!await isAtLeastCurator(req.user.id)) {
+      return res.status(403).json({ error: 'Se requieren permisos de Curador o Administrador' });
+    }
+    
+    const { id } = req.params;
+    
+    // Verificar si hay eventos usando este lugar
+    const checkResult = await pool.query(
+      'SELECT COUNT(*) FROM events WHERE place_id = $1',
+      [id]
+    );
+    
+    if (parseInt(checkResult.rows[0].count) > 0) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el lugar porque hay eventos asociados' 
+      });
+    }
+    
+    const result = await pool.query('DELETE FROM places WHERE id = $1 RETURNING id', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Lugar no encontrado' });
+    }
+    
+    res.json({ message: 'Lugar eliminado' });
+  } catch (error) {
+    console.error('Error deleting place:', error);
+    res.status(500).json({ error: 'Error al eliminar lugar' });
+  }
+});
+
+// ============================================================================
+// CHARACTERS FILTERED BY FRAME
+// ============================================================================
+
+// GET /api/characters/by-frame/:frameId - Obtener personajes asociados a eventos de un marco
+app.get('/api/characters/by-frame/:frameId', async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const result = await pool.query(`
+      SELECT DISTINCT c.id, c.name, c.alias, c.description, c.image_url, c.created_at
+      FROM characters c
+      JOIN events e ON e.characters ? c.name
+      WHERE e.frame_id = $1
+      ORDER BY c.name ASC
+    `, [frameId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching characters by frame:', error);
+    res.status(500).json({ error: 'Error al obtener personajes por marco' });
+  }
+});
+
+// ============================================================================
+// PLACES FILTERED BY FRAME
+// ============================================================================
+
+// GET /api/places/by-frame/:frameId - Obtener lugares asociados a eventos de un marco
+app.get('/api/places/by-frame/:frameId', async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const result = await pool.query(`
+      SELECT DISTINCT p.id, p.current_name, p.previous_name, p.lat, p.lng, 
+             p.place_type_id, pt.name as place_type_name, pt.icon as place_type_icon,
+             p.created_at, p.updated_at
+      FROM places p
+      JOIN events e ON e.place_id = p.id
+      LEFT JOIN place_types pt ON p.place_type_id = pt.id
+      WHERE e.frame_id = $1
+      ORDER BY p.current_name ASC
+    `, [frameId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching places by frame:', error);
+    res.status(500).json({ error: 'Error al obtener lugares por marco' });
+  }
 });

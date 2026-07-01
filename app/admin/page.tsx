@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { api, auth } from '@/lib/api'
 import { HistoricalEvent } from '../types'
-import Navbar from '../components/Navbar'
-import AdminNav from '../components/AdminNav'
+import Navbar from '../components/layout/Navbar'
+import AdminNav from '../components/layout/AdminNav'
 import { useRouter } from 'next/navigation'
 import { t } from '@/app/lib/i18n'
 

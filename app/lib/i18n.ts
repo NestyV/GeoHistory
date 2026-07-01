@@ -340,3 +340,18 @@ export const languages = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'pt', name: 'Português', flag: '🇧🇷' }
 ]
+
+// Agregar a translations.es:
+//   placeTypes: 'Tipos de Lugar',
+//   places: 'Lugares',
+//   addPlaceType: 'Agregar Tipo',
+//   editPlaceType: 'Editar Tipo de Lugar',
+//   addPlace: 'Agregar Lugar',
+//   editPlace: 'Editar Lugar',
+//   placeTypeName: 'Nombre del tipo',
+//   placeTypeIcon: 'Icono',
+//   placeCurrentName: 'Nombre actual',
+//   placePreviousName: 'Nombre anterior',
+//   placeCoordinates: 'Coordenadas',
+//   placeTypeRequired: 'Seleccione un tipo de lugar',
+//   currentNameRequired: 'El nombre actual es requerido',

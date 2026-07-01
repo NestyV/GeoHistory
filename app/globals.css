@@ -296,3 +296,73 @@ img {
 .leaflet-container {
   touch-action: none;
 }
+
+/* Mejorar prioridad de tooltips y popups */
+.leaflet-tooltip {
+  z-index: 1000 !important;
+}
+
+.leaflet-popup {
+  z-index: 900 !important;
+}
+
+.leaflet-marker-icon {
+  z-index: 1 !important;
+  transition: z-index 0s;
+}
+
+.leaflet-marker-icon:hover {
+  z-index: 1001 !important;
+}
+
+/* Popup con scroll si es necesario */
+.leaflet-popup-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 8px 12px;
+}
+
+/* Scrollbar personalizado para el popup */
+.leaflet-popup-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.leaflet-popup-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.leaflet-popup-content::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.leaflet-popup-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Asegurar que los tooltips estén siempre encima */
+.leaflet-tooltip {
+  z-index: 10000 !important;
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border: 1px solid #ccc !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 10000 !important;
+}
+
+.leaflet-marker-icon {
+  z-index: 1 !important;
+}
+
+.leaflet-popup {
+  z-index: 9000 !important;
+}
+
+/* Auto-pan padding para que el popup no choque con el borde */
+.leaflet-popup-pane {
+  pointer-events: auto;
+}

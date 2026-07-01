@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { api, auth } from '@/lib/api'
-import Navbar from '@/app/components/Navbar'
-import AdminNav from '@/app/components/AdminNav'
-import OptimizedImage from '@/app/components/OptimizedImage'
+import Navbar from '@/app/components/layout/Navbar'
+import AdminNav from '@/app/components/layout/AdminNav'
+import OptimizedImage from '@/app/components/common/OptimizedImage'
 import { useRouter } from 'next/navigation'
 import { t } from '@/app/lib/i18n'
 
@@ -13,8 +13,9 @@ function convertWikipediaUrl(url: string): string {
   if (url.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)) return url
   const esMatch = url.match(/\/media\/Archivo:(.+?)\.(jpg|jpeg|png|gif)/i)
   if (esMatch) {
-    const filename = esMatch[1]
-    const extension = esMatch[2]
+    const filename = esMatch[1] || ''
+    const extension = esMatch[2] || 'jpg'
+    if (!filename) return url
     return `https://upload.wikimedia.org/wikipedia/commons/thumb/${filename.charAt(0)}/${filename}/${filename}.${extension}/200px-${filename}.${extension}`
   }
   return url
@@ -22,6 +23,8 @@ function convertWikipediaUrl(url: string): string {
 
 export default function CharactersPage() {
   const [characters, setCharacters] = useState<any[]>([])
+  const [frames, setFrames] = useState<any[]>([])
+  const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingCharacter, setEditingCharacter] = useState<any>(null)
   const [showForm, setShowForm] = useState(false)
@@ -30,12 +33,29 @@ export default function CharactersPage() {
   const [wikipediaUrl, setWikipediaUrl] = useState('')
   const [formData, setFormData] = useState({
     name: '',
+    alias: '',
     description: '',
     image_url: ''
   })
   const router = useRouter()
+  
   const currentUser = auth.getUser()
   const isAtLeastCurator = currentUser?.role === 'curator' || currentUser?.role === 'super_user'
+
+  // Cargar marcos al inicio
+  useEffect(() => {
+    const loadFrames = async () => {
+      try {
+        const data = await api.getFrames()
+        setFrames(data || [])
+      } catch (error) {
+        console.error('Error loading frames:', error)
+      }
+    }
+    if (isAtLeastCurator) {
+      loadFrames()
+    }
+  }, [isAtLeastCurator])
 
   useEffect(() => {
     if (!isAtLeastCurator) {
@@ -43,11 +63,16 @@ export default function CharactersPage() {
       return
     }
     fetchCharacters()
-  }, [router, isAtLeastCurator])
+  }, [router, isAtLeastCurator, selectedFrameId])
 
   const fetchCharacters = async () => {
     try {
-      const data = await api.getCharacters()
+      let data
+      if (selectedFrameId) {
+        data = await api.getCharactersByFrame(selectedFrameId)
+      } else {
+        data = await api.getCharacters()
+      }
       setCharacters(data || [])
     } catch (error) {
       console.error('Error fetching characters:', error)
@@ -59,26 +84,41 @@ export default function CharactersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      if (editingCharacter) {
-        const response = await fetch(`http://localhost:3001/api/characters/${editingCharacter.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          },
-          body: JSON.stringify(formData)
-        })
-        if (!response.ok) {
-          const error = await response.json()
-          alert('Error: ' + error.error)
-          return
-        }
-      } else {
-        await api.createCharacter(formData.name, formData.description, formData.image_url)
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        alert('No hay token de autenticación. Por favor, inicia sesión nuevamente.')
+        return
       }
+      
+      const payload = {
+        name: formData.name,
+        alias: formData.alias || null,
+        description: formData.description || null,
+        image_url: formData.image_url || null
+      }
+      
+      const url = editingCharacter 
+        ? `http://localhost:3001/api/characters/${editingCharacter.id}`
+        : 'http://localhost:3001/api/characters'
+      
+      const response = await fetch(url, {
+        method: editingCharacter ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Error al guardar')
+        return
+      }
+      
       setShowForm(false)
       setEditingCharacter(null)
-      setFormData({ name: '', description: '', image_url: '' })
+      setFormData({ name: '', alias: '', description: '', image_url: '' })
       setImagePreview('')
       setWikipediaUrl('')
       fetchCharacters()
@@ -88,19 +128,32 @@ export default function CharactersPage() {
   }
 
   const handleDelete = async (id: string) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este personaje?')) return
+    
     try {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        alert('No hay token de autenticación. Por favor, inicia sesión nuevamente.')
+        return
+      }
+      
       const response = await fetch(`http://localhost:3001/api/characters/${id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+          'Authorization': `Bearer ${token}`
         }
       })
-      if (response.ok) {
-        fetchCharacters()
+      
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Error al eliminar')
+        return
       }
+      
+      fetchCharacters()
     } catch (error) {
       console.error('Error deleting character:', error)
-      alert('Error deleting character')
+      alert('Error al eliminar el personaje')
     }
   }
 
@@ -108,6 +161,7 @@ export default function CharactersPage() {
     setEditingCharacter(character)
     setFormData({
       name: character.name,
+      alias: character.alias || '',
       description: character.description || '',
       image_url: character.image_url || ''
     })
@@ -152,20 +206,34 @@ export default function CharactersPage() {
         <h1 className="text-3xl font-bold mb-6">{t('adminPanel')}</h1>
         <AdminNav />
         
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
           <h2 className="text-2xl font-semibold">{t('characters')}</h2>
-          <button
-            onClick={() => {
-              setEditingCharacter(null)
-              setFormData({ name: '', description: '', image_url: '' })
-              setImagePreview('')
-              setWikipediaUrl('')
-              setShowForm(true)
-            }}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            + {t('addCharacter')}
-          </button>
+          <div className="flex items-center gap-3">
+            {frames.length > 0 && (
+              <select
+                value={selectedFrameId || ''}
+                onChange={e => setSelectedFrameId(e.target.value || null)}
+                className="px-3 py-1 border rounded text-sm bg-white"
+              >
+                <option value="">Todos los marcos</option>
+                {frames.map(frame => (
+                  <option key={frame.id} value={frame.id}>{frame.name}</option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={() => {
+                setEditingCharacter(null)
+                setFormData({ name: '', alias: '', description: '', image_url: '' })
+                setImagePreview('')
+                setWikipediaUrl('')
+                setShowForm(true)
+              }}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
+              + {t('addCharacter')}
+            </button>
+          </div>
         </div>
 
         {showForm && (
@@ -183,6 +251,13 @@ export default function CharactersPage() {
                   className="w-full p-2 border rounded"
                   required
                 />
+                <input
+                  type="text"
+                  placeholder="Alias (conocido como)"
+                  value={formData.alias}
+                  onChange={e => setFormData({ ...formData, alias: e.target.value })}
+                  className="w-full p-2 border rounded"
+                />
                 <textarea
                   placeholder={t('description')}
                   value={formData.description}
@@ -190,24 +265,21 @@ export default function CharactersPage() {
                   className="w-full p-2 border rounded"
                   rows={3}
                 />
-                
-                <div>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      placeholder={t('imageUrl')}
-                      value={formData.image_url}
-                      onChange={e => handleImageUrlChange(e.target.value)}
-                      className="flex-1 p-2 border rounded"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowUrlHelper(!showUrlHelper)}
-                      className="bg-gray-500 text-white px-3 py-2 rounded hover:bg-gray-600 text-sm"
-                    >
-                      {t('help')}
-                    </button>
-                  </div>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder={t('imageUrl')}
+                    value={formData.image_url}
+                    onChange={e => handleImageUrlChange(e.target.value)}
+                    className="flex-1 p-2 border rounded"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUrlHelper(!showUrlHelper)}
+                    className="bg-gray-500 text-white px-3 py-2 rounded hover:bg-gray-600 text-sm"
+                  >
+                    {t('help')}
+                  </button>
                 </div>
 
                 {showUrlHelper && (
@@ -216,7 +288,7 @@ export default function CharactersPage() {
                     <ol className="text-xs space-y-2 list-decimal list-inside">
                       <li>Ve a la página de Wikipedia del personaje</li>
                       <li>Haz clic derecho sobre la imagen</li>
-                      <li>Selecciona "Copiar dirección de la imagen"</li>
+                      <li>Selecciona &quot;Copiar dirección de la imagen&quot;</li>
                       <li>Pega la URL en el campo de arriba</li>
                     </ol>
                     <div className="mt-3">
@@ -290,7 +362,10 @@ export default function CharactersPage() {
                   </div>
                 )}
                 <div className="flex-1">
-                  <h3 className="font-semibold text-lg">{char.name}</h3>
+                  <h3 className="font-semibold text-lg">
+                    {char.name}
+                    {char.alias && <span className="text-sm text-gray-500 ml-2">({char.alias})</span>}
+                  </h3>
                   {char.description && (
                     <p className="text-sm text-gray-600 mt-1">{char.description}</p>
                   )}

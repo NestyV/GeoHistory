@@ -45,11 +45,11 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
     ...options,
     headers,
   });
-  
-  const data = await response.json();
+
+  const data = await response.json().catch(() => ({}));
   
   if (!response.ok) {
-    throw new Error(data.error || 'API call failed');
+    throw new Error(data.message || data.error || 'API call failed');
   }
   
   return data;
@@ -97,7 +97,6 @@ export const auth = {
   },
   
   logout: async () => {
-    // Solo limpiar localStorage, NO eliminar preferencias de la base de datos
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user');
     authToken = null;
@@ -144,6 +143,7 @@ export const auth = {
 };
 
 export const api = {
+  // Frames
   getFrames: async () => {
     return await apiCall('/api/frames');
   },
@@ -155,23 +155,29 @@ export const api = {
     });
   },
   
+  // Characters
   getCharacters: async () => {
     return await apiCall('/api/characters');
   },
+
+  getCharactersByFrame: async (frameId: string) => {
+    return await apiCall(`/api/characters?frame_id=${encodeURIComponent(frameId)}`);
+  },
   
-  createCharacter: async (name: string, description?: string, image_url?: string) => {
+  createCharacter: async (name: string, alias?: string, description?: string, image_url?: string) => {
     return await apiCall('/api/characters', {
       method: 'POST',
-      body: JSON.stringify({ name, description, image_url }),
+      body: JSON.stringify({ name, alias, description, image_url }),
     });
   },
   
+  // Events
   getEvents: async () => {
     return await apiCall('/api/events');
   },
   
-  getPendingEvents: async () => {
-    return await apiCall('/api/admin/events/pending');
+  getMyEvents: async () => {
+    return await apiCall('/api/events/my');
   },
   
   createEvent: async (eventData: any) => {
@@ -191,6 +197,35 @@ export const api = {
     return await apiCall(`/api/events/${eventId}`, {
       method: 'DELETE',
     });
+  },
+  
+  // Admin
+  getPendingEvents: async () => {
+    return await apiCall('/api/admin/events/pending');
+  },
+  
+  // Places
+  getPlaces: async () => {
+    return await apiCall('/api/places');
+  },
+
+  getPlacesByFrame: async (frameId: string) => {
+    return await apiCall(`/api/places?frame_id=${encodeURIComponent(frameId)}`);
+  },
+  
+  getPlaceTypes: async () => {
+    return await apiCall('/api/place-types');
+  },
+  
+  createPlace: async (placeData: { place_type_id: string; current_name: string; previous_name?: string; lat: number; lng: number }) => {
+    return await apiCall('/api/places', {
+      method: 'POST',
+      body: JSON.stringify(placeData),
+    });
+  },
+  
+  getNearbyPlaces: async (lat: number, lng: number, radius: number = 10) => {
+    return await apiCall(`/api/places/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
   },
 };
 

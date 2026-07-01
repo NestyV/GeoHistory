@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from '@/lib/api'
-import Navbar from '../components/Navbar'
-import OptimizedImage from '../components/OptimizedImage'
+import Navbar from '../components/layout/Navbar'
+import OptimizedImage from '../components/common/OptimizedImage'
 import { t } from '@/app/lib/i18n'
 
 // Función para formatear fecha sin conversión de zona horaria
