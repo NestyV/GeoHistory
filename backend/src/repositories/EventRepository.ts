@@ -58,8 +58,8 @@ export class EventRepository extends BaseRepository<Event> {
     try {
       const result = await query<Event>(
         `SELECT * FROM events 
-         WHERE latitude BETWEEN $1 AND $2 
-         AND longitude BETWEEN $3 AND $4
+         WHERE lat BETWEEN $1 AND $2 
+         AND lng BETWEEN $3 AND $4
          AND status = 'approved'
          ORDER BY created_at DESC`,
         [minLat, maxLat, minLon, maxLon],
@@ -78,9 +78,9 @@ export class EventRepository extends BaseRepository<Event> {
     try {
       const result = await query<Event>(
         `SELECT * FROM events 
-         WHERE start_date >= $1 AND start_date <= $2
+         WHERE event_date >= $1 AND event_date <= $2
          AND status = 'approved'
-         ORDER BY start_date ASC`,
+         ORDER BY event_date ASC`,
         [startDate, endDate],
       );
       return result.rows;
@@ -114,7 +114,7 @@ export class EventRepository extends BaseRepository<Event> {
   async updateStatus(eventId: string, status: 'pending' | 'approved' | 'rejected'): Promise<Event | null> {
     try {
       const result = await query<Event>(
-        `UPDATE events SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+        `UPDATE events SET status = $1 WHERE id = $2 RETURNING *`,
         [status, eventId],
       );
       return result.rows[0] || null;

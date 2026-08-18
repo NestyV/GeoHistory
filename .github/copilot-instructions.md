@@ -219,6 +219,22 @@ Before committing:
 **Implementation**:
 - [specs/IMPLEMENTATION_PLAN.md](../specs/IMPLEMENTATION_PLAN.md) — 5-phase refactoring roadmap
 
+## Evidence and Execution Boundaries
+
+### Source Precedence
+- For current runtime behavior, inspect the owning code in `app/` or `backend/src/`, its closest test, and the relevant package script.
+- For current database state, `db/schema.sql` is authoritative.
+- `specs/` defines approved target architecture and requirements; confirm an implementation before treating a planned item as live.
+- `docs/DESIGN_SPECS.md` is deprecated and must not drive implementation decisions.
+- When these sources conflict, do not guess or reconcile them during unrelated work. Report the conflict and request the intended contract.
+
+### Bounded Execution
+- Before editing, read the owning file and one nearby test, type, or call site. Do not conduct broad repository exploration unless local evidence is insufficient.
+- Start Docker, development servers, browser automation, or external requests only when the requested validation requires them. Reuse an already-running service rather than starting another.
+- Run the smallest relevant validation after a change. Expand to integration or full-suite checks only for cross-layer behavior, a focused failure, or an explicit request.
+- Do not install dependencies, update lockfiles, regenerate artifacts, modify environment files, reset databases, or run destructive commands unless the user explicitly requests it.
+- Inspect `package.json` before suggesting or running a script, and state why a command is necessary before executing it.
+
 ## Execution Guidelines
 PROGRESS TRACKING:
 - If any tools are available to manage the above todo list, use it to track progress through this checklist.

@@ -47,7 +47,7 @@ docker-compose up -d
 4. Initialize database schema
 
 ```bash
-docker-compose exec db psql -U postgres -d geohistory < db/schema.sql
+docker-compose exec postgres psql -U geohistory_user -d geohistory < db/schema.sql
 ```
 
 5. Start applications
@@ -61,6 +61,54 @@ npm run dev
 
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3001/api/health
+
+## Daily Startup Checklist
+
+Use this sequence every time you start working or testing locally:
+
+See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the full reusable runbook.
+
+1. Confirm prerequisites are running
+
+```bash
+docker-compose ps
+```
+
+2. Start the database and backend support services
+
+```bash
+docker-compose up -d
+```
+
+3. Start the application stack
+
+```bash
+npm run dev
+```
+
+4. Verify backend is healthy
+
+```bash
+curl http://localhost:3001/api/health
+```
+
+5. Open the frontend in the browser
+
+- Frontend: http://localhost:3000
+
+6. Run tests before and after changes
+
+```bash
+npm run test:frontend
+cd backend && npm run test:integration
+cd backend && npm run type-check
+```
+
+7. Stop services when finished
+
+```bash
+docker-compose down
+```
 
 ## Useful Commands
 
@@ -103,7 +151,7 @@ This codebase is in active refactoring. Core modular routes/services are now liv
 - Fixed malformed backend startup block in backend/src/index.ts that prevented TypeScript compilation.
 - Removed legacy backup artifacts in backend and _backup directories.
 - Updated root scripts so npm run dev starts both frontend and backend concurrently.
-- Replaced outdated Supabase-focused README content with PostgreSQL + Docker + modular backend setup.
+- Replaced outdated hosted-BaaS-focused README content with PostgreSQL + Docker + modular backend setup.
 
 ### v0.2.2 - 2026-06-26
 
@@ -410,6 +458,23 @@ This codebase is in active refactoring. Core modular routes/services are now liv
 	- Backend integration tests: 7 suites passed, 28 tests passed
 	- Backend type-check: clean
 	- Frontend tests (regression): 4 suites passed, 7 tests passed
+
+### v0.2.22 - 2026-07-03
+
+- Added a dedicated runbook at [docs/RUNBOOK.md](docs/RUNBOOK.md) and linked it from the README startup checklist.
+- Fixed the admin events management view so it loads both approved and pending events for the full moderation/editing list.
+- Fixed map pin interaction so clicking a pin reliably opens its popup via Leaflet marker refs.
+- Validation results:
+	- Frontend build: successful
+	- Frontend tests: 4 suites passed, 7 tests passed
+
+### v0.2.23 - 2026-07-03
+
+- Aligned local backend development defaults with the actual docker-compose PostgreSQL credentials.
+- Updated the environment template so fresh local setup points to the correct `geohistory_user`/`change_this_password_12345` database credentials.
+- Updated the README schema initialization command to use the compose service name and correct database user.
+- Validation result:
+	- `npm run dev` in `backend/` now reaches normal startup and reports a successful database connection.
 
 Note: This section will be appended for each new implementation batch so changes are tracked by version directly in this README.
 

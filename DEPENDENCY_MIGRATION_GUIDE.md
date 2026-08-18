@@ -2,10 +2,10 @@
 
 ## 🎯 Overview
 
-This guide walks you through the complete migration from Supabase to a self-hosted setup with local PostgreSQL and a Node.js Express backend.
+This guide walks you through the complete migration from a hosted BaaS setup to a self-hosted setup with local PostgreSQL and a Node.js Express backend.
 
 **What Changed:**
-- ❌ Removed: @supabase/supabase-js (vulnerable)
+- ❌ Removed: legacy BaaS SDK dependency (vulnerable)
 - ✅ Added: Express.js backend
 - ✅ Added: Self-hosted PostgreSQL
 - ✅ Added: JWT-based authentication
@@ -351,7 +351,7 @@ Then update backend/.env with the output.
 1. ✅ Database running
 2. ✅ Backend API running
 3. ✅ Frontend running
-4. ⏭️ **Update frontend API calls** - Replace Supabase calls with backend API calls
+4. ⏭️ **Update frontend API calls** - Replace legacy client calls with backend API calls
 5. ⏭️ **Test authentication flow**
 6. ⏭️ **Share URL with friends via ngrok**
 

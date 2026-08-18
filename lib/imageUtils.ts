@@ -10,8 +10,9 @@ export function convertWikipediaUrl(url: string): string {
   // Extract filename from Spanish Wikipedia URL
   const esMatch = url.match(/\/media\/Archivo:(.+?)\.(jpg|jpeg|png|gif)/i)
   if (esMatch) {
-    const filename = esMatch[1]
-    const extension = esMatch[2]
+    const filename = esMatch[1] || ''
+    const extension = esMatch[2] || 'jpg'
+    if (!filename) return url
     // Replace spaces with underscores and clean filename
     const cleanFilename = filename.replace(/ /g, '_')
     return `https://upload.wikimedia.org/wikipedia/commons/thumb/${cleanFilename.charAt(0)}/${cleanFilename}/${cleanFilename}.${extension}/200px-${cleanFilename}.${extension}`
@@ -20,8 +21,9 @@ export function convertWikipediaUrl(url: string): string {
   // Extract filename from English Wikipedia URL
   const enMatch = url.match(/\/media\/File:(.+?)\.(jpg|jpeg|png|gif)/i)
   if (enMatch) {
-    const filename = enMatch[1]
-    const extension = enMatch[2]
+    const filename = enMatch[1] || ''
+    const extension = enMatch[2] || 'jpg'
+    if (!filename) return url
     const cleanFilename = filename.replace(/ /g, '_')
     return `https://upload.wikimedia.org/wikipedia/commons/thumb/${cleanFilename.charAt(0)}/${cleanFilename}/${cleanFilename}.${extension}/200px-${cleanFilename}.${extension}`
   }
@@ -31,7 +33,7 @@ export function convertWikipediaUrl(url: string): string {
 
 // Function to get direct image URL from Wikipedia page URL
 export function getWikipediaImageUrl(wikipediaPageUrl: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     // This is a helper - for now, we'll just extract from the URL
     // In production, you might want to fetch the page and parse the image
     const directUrl = convertWikipediaUrl(wikipediaPageUrl)

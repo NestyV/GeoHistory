@@ -8,6 +8,21 @@
 
 ---
 
+## Current Contract Decisions Required
+
+The plan describes the target refactor and is not proof that a task is implemented. Before work that depends on one of the following contracts, choose the intended target and align the code, tests, schema, and specifications in one scoped change:
+
+| Contract | Current conflict | Required decision |
+|----------|------------------|-------------------|
+| Roles | `db/schema.sql` permits `regular` and `super_user`; Security and product guidance describe `user`, `curator`, and `super_user`. | Confirm the production role set and migration path. |
+| Authorization | The legacy design document grants operations to different roles than Security. | Confirm the permission matrix to enforce. |
+| Token endpoints | Documents refer to both `/api/auth/refresh` and `/api/auth/refresh-token`. | Confirm the public API contract and update callers/tests together. |
+| Health endpoint | Historical docs mention both `/health` and `/api/health`. | Confirm the supported route and update operational checks. |
+
+Until resolved, agents must report the relevant conflict rather than guessing, changing schema, or adding compatibility behavior during unrelated tasks.
+
+---
+
 ## Overview
 
 This plan breaks down the refactoring into **5 phases**, each with specific deliverables, testing criteria, and success metrics.
@@ -55,7 +70,7 @@ This plan breaks down the refactoring into **5 phases**, each with specific deli
 
 ### 1.2 Cleanup Technical Debt
 
-**Goal**: Remove backup files, duplicate components, and Supabase references.
+**Goal**: Remove backup files, duplicate components, and legacy provider references.
 
 **Tasks**:
 - [ ] Remove backup files
@@ -72,7 +87,7 @@ This plan breaks down the refactoring into **5 phases**, each with specific deli
   # Replace with API calls or repository pattern
   ```
 - [ ] Update [.github/copilot-instructions.md](../.github/copilot-instructions.md)
-  - [ ] Replace all Supabase references with PostgreSQL
+  - [ ] Replace all legacy provider references with PostgreSQL
   - [ ] Remove old SQL policies (replaced by backend validation)
   - [ ] Document new backend architecture
 
@@ -645,7 +660,7 @@ backend/src/routes/
 
 **Tasks**:
 - [ ] Update [README.md](README.md)
-  - [ ] Remove Supabase references
+  - [ ] Remove legacy provider references
   - [ ] Add new backend setup steps
   - [ ] Update architecture diagram
 - [ ] Create ADRs (Architecture Decision Records)

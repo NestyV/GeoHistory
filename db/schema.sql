@@ -39,9 +39,23 @@ CREATE TABLE events (
 CREATE TABLE characters (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT UNIQUE NOT NULL,
+  frame_id UUID REFERENCES frames(id) ON DELETE SET NULL,
   description TEXT,
   image_url TEXT,
+  face_crop_x DOUBLE PRECISION DEFAULT 50,
+  face_crop_y DOUBLE PRECISION DEFAULT 40,
+  face_crop_scale DOUBLE PRECISION DEFAULT 1,
+  face_crop_size DOUBLE PRECISION DEFAULT 55,
   created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create character-frame relationships table
+CREATE TABLE character_frames (
+  character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  frame_id UUID NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (character_id, frame_id)
 );
 
 -- Create refresh tokens table for JWT rotation/revocation
@@ -64,6 +78,8 @@ CREATE INDEX idx_events_status ON events(status);
 CREATE INDEX idx_events_event_date ON events(event_date);
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX idx_refresh_tokens_token_id ON refresh_tokens(token_id);
+CREATE INDEX idx_character_frames_frame_id ON character_frames(frame_id);
+CREATE INDEX idx_character_frames_character_id ON character_frames(character_id);
 
 -- Set up Row Level Security (RLS) policies
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;

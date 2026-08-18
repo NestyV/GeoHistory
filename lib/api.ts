@@ -6,11 +6,21 @@ let currentUser: any = null;
 function parseJwt(token: string) {
   try {
     const base64Url = token.split('.')[1];
+    if (!base64Url) return null;
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
       return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
     }).join(''));
-    return JSON.parse(jsonPayload);
+    const parsed = JSON.parse(jsonPayload);
+
+    // Reject expired JWTs on the client so role gating does not trust stale tokens.
+    if (parsed?.exp && typeof parsed.exp === 'number') {
+      if (Date.now() >= parsed.exp * 1000) {
+        return null;
+      }
+    }
+
+    return parsed;
   } catch (e) {
     return null;
   }
@@ -31,9 +41,9 @@ if (typeof window !== 'undefined') {
 }
 
 async function apiCall(endpoint: string, options: RequestInit = {}) {
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string> | undefined),
   };
   
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : authToken;
@@ -49,10 +59,32 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
   const data = await response.json().catch(() => ({}));
   
   if (!response.ok) {
-    throw new Error(data.message || data.error || 'API call failed');
+    const message = data.message || data.error || 'API call failed';
+
+    // Keep client auth state in sync when backend rejects auth tokens.
+    if (
+      response.status === 401 &&
+      typeof window !== 'undefined' &&
+      typeof message === 'string' &&
+      (message.includes('Invalid or expired authentication token') ||
+        message.includes('Missing authentication token'))
+    ) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('user');
+      authToken = null;
+      currentUser = null;
+    }
+
+    throw new Error(message);
   }
   
   return data;
+}
+
+function asList<T = any>(payload: any): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
 }
 
 export const auth = {
@@ -145,7 +177,7 @@ export const auth = {
 export const api = {
   // Frames
   getFrames: async () => {
-    return await apiCall('/api/frames');
+    return asList(await apiCall('/api/frames'));
   },
   
   createFrame: async (name: string, description?: string, start_date?: string, end_date?: string) => {
@@ -157,11 +189,11 @@ export const api = {
   
   // Characters
   getCharacters: async () => {
-    return await apiCall('/api/characters');
+    return asList(await apiCall('/api/characters'));
   },
 
   getCharactersByFrame: async (frameId: string) => {
-    return await apiCall(`/api/characters?frame_id=${encodeURIComponent(frameId)}`);
+    return asList(await apiCall(`/api/characters?frame_id=${encodeURIComponent(frameId)}`));
   },
   
   createCharacter: async (name: string, alias?: string, description?: string, image_url?: string) => {
@@ -173,16 +205,23 @@ export const api = {
   
   // Events
   getEvents: async () => {
-    return await apiCall('/api/events');
+    return asList(await apiCall('/api/events'));
   },
   
   getMyEvents: async () => {
-    return await apiCall('/api/events/my');
+    return asList(await apiCall('/api/events/my'));
   },
   
   createEvent: async (eventData: any) => {
     return await apiCall('/api/events', {
       method: 'POST',
+      body: JSON.stringify(eventData),
+    });
+  },
+
+  updateEvent: async (eventId: string, eventData: any) => {
+    return await apiCall(`/api/events/${eventId}`, {
+      method: 'PUT',
       body: JSON.stringify(eventData),
     });
   },
@@ -201,20 +240,40 @@ export const api = {
   
   // Admin
   getPendingEvents: async () => {
-    return await apiCall('/api/admin/events/pending');
+    return asList(await apiCall('/api/admin/events/pending'));
   },
   
   // Places
   getPlaces: async () => {
-    return await apiCall('/api/places');
+    return asList(await apiCall('/api/places'));
   },
 
   getPlacesByFrame: async (frameId: string) => {
-    return await apiCall(`/api/places?frame_id=${encodeURIComponent(frameId)}`);
+    return asList(await apiCall(`/api/places?frame_id=${encodeURIComponent(frameId)}`));
   },
   
   getPlaceTypes: async () => {
-    return await apiCall('/api/place-types');
+    return asList(await apiCall('/api/place-types'));
+  },
+
+  createPlaceType: async (placeTypeData: { name: string; description?: string; icon?: string }) => {
+    return await apiCall('/api/place-types', {
+      method: 'POST',
+      body: JSON.stringify(placeTypeData),
+    });
+  },
+
+  updatePlaceType: async (placeTypeId: string, placeTypeData: { name?: string; description?: string; icon?: string }) => {
+    return await apiCall(`/api/place-types/${placeTypeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(placeTypeData),
+    });
+  },
+
+  deletePlaceType: async (placeTypeId: string) => {
+    return await apiCall(`/api/place-types/${placeTypeId}`, {
+      method: 'DELETE',
+    });
   },
   
   createPlace: async (placeData: { place_type_id: string; current_name: string; previous_name?: string; lat: number; lng: number }) => {
@@ -223,10 +282,42 @@ export const api = {
       body: JSON.stringify(placeData),
     });
   },
+
+  updatePlace: async (placeId: string, placeData: { place_type_id?: string; current_name?: string; previous_name?: string; lat?: number; lng?: number }) => {
+    return await apiCall(`/api/places/${placeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(placeData),
+    });
+  },
+
+  deletePlace: async (placeId: string) => {
+    return await apiCall(`/api/places/${placeId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getUserPreferences: async () => {
+    return await apiCall('/api/user/preferences');
+  },
+
+  saveUserPreferences: async (payload: {
+    last_frame_id: string | null;
+    last_year: number | null;
+    last_lat: number;
+    last_lng: number;
+    last_zoom: number;
+  }) => {
+    return await apiCall('/api/user/preferences', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
   
   getNearbyPlaces: async (lat: number, lng: number, radius: number = 10) => {
     return await apiCall(`/api/places/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
   },
 };
 
-export default { auth, api };
+const apiClient = { auth, api };
+
+export default apiClient;

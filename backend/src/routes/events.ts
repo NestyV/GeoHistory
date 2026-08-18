@@ -48,9 +48,14 @@ const normalizeEventPayload = (input: any): CreateEventRequest => {
   return {
     title,
     description: typeof input?.description === 'string' ? input.description : '',
+    frame_id: typeof input?.frame_id === 'string' && input.frame_id.trim().length > 0 ? input.frame_id : null,
+    characters: Array.isArray(input?.characters) ? input.characters : [],
+    event_date: startDate,
     start_date: startDate,
     end_date: typeof input?.end_date === 'string' ? input.end_date : undefined,
     location: typeof input?.location === 'string' ? input.location : '',
+    lat: latitude,
+    lng: longitude,
     latitude,
     longitude,
   };
@@ -81,6 +86,21 @@ const normalizeEventUpdatePayload = (input: any): UpdateEventRequest => {
       throw new ValidationError('Event start date must be a valid string');
     }
     output.start_date = startDate;
+    output.event_date = startDate;
+  }
+
+  if (input?.frame_id !== undefined) {
+    if (input.frame_id !== null && typeof input.frame_id !== 'string') {
+      throw new ValidationError('Event frame_id must be a string or null');
+    }
+    output.frame_id = input.frame_id;
+  }
+
+  if (input?.characters !== undefined) {
+    if (!Array.isArray(input.characters)) {
+      throw new ValidationError('Event characters must be an array');
+    }
+    output.characters = input.characters;
   }
 
   if (input?.latitude !== undefined || input?.lat !== undefined) {
@@ -97,6 +117,7 @@ const normalizeEventUpdatePayload = (input: any): UpdateEventRequest => {
       throw new ValidationError('Event longitude must be between -180 and 180');
     }
     output.longitude = longitude;
+    output.lng = longitude;
   }
 
   if (input?.location !== undefined) {

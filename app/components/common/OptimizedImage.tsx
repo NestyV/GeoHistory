@@ -1,7 +1,36 @@
+/* eslint-disable @next/next/no-img-element */
+
 'use client'
 
 import { useState, useEffect } from 'react'
-import { convertWikipediaUrl } from '@/lib/imageUtils'
+
+const convertWikipediaUrl = (url: string): string => {
+	if (!url) return url
+
+	if (url.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)) {
+		return url
+	}
+
+	const esMatch = url.match(/\/media\/Archivo:(.+?)\.(jpg|jpeg|png|gif)/i)
+	if (esMatch) {
+		const filename = esMatch[1] || ''
+		const extension = esMatch[2] || 'jpg'
+		if (!filename) return url
+		const cleanFilename = filename.replace(/ /g, '_')
+		return `https://upload.wikimedia.org/wikipedia/commons/thumb/${cleanFilename.charAt(0)}/${cleanFilename}/${cleanFilename}.${extension}/200px-${cleanFilename}.${extension}`
+	}
+
+	const enMatch = url.match(/\/media\/File:(.+?)\.(jpg|jpeg|png|gif)/i)
+	if (enMatch) {
+		const filename = enMatch[1] || ''
+		const extension = enMatch[2] || 'jpg'
+		if (!filename) return url
+		const cleanFilename = filename.replace(/ /g, '_')
+		return `https://upload.wikimedia.org/wikipedia/commons/thumb/${cleanFilename.charAt(0)}/${cleanFilename}/${cleanFilename}.${extension}/200px-${cleanFilename}.${extension}`
+	}
+
+	return url
+}
 
 interface OptimizedImageProps {
 	src: string

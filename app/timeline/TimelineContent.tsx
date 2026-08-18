@@ -9,7 +9,8 @@ import { t } from '@/app/lib/i18n'
 // Función para formatear fecha sin conversión de zona horaria
 const formatDateDisplay = (dateString: string) => {
   if (!dateString) return ''
-  const [year, month, day] = dateString.split('T')[0].split('-')
+  const datePart = dateString.split('T')[0] || ''
+  const [year = '', month = '', day = ''] = datePart.split('-')
   return `${day}/${month}/${year}`
 }
 
@@ -74,7 +75,7 @@ export default function TimelineContent() {
       setYears(newYears)
       
       if (!userSelectedYear && newYears.length > 0 && selectedYear === null) {
-        setSelectedYear(newYears[0])
+        setSelectedYear(newYears[0] ?? null)
       }
     } else {
       const frameEvents = events.filter(e => 
@@ -86,7 +87,7 @@ export default function TimelineContent() {
       setYears(newYears)
       
       if (selectedYear !== null && !newYears.includes(selectedYear)) {
-        setSelectedYear(newYears.length > 0 ? newYears[0] : null)
+        setSelectedYear(newYears.length > 0 ? (newYears[0] ?? null) : null)
         setUserSelectedYear(false)
       }
     }
@@ -128,6 +129,13 @@ export default function TimelineContent() {
   const getCharacterImage = (characterName: string) => {
     const character = characters.find(c => c.name === characterName)
     return character?.image_url
+  }
+
+  const formatLocation = (lat: number | null, lng: number | null) => {
+    if (lat == null || lng == null) {
+      return '📍 Sin coordenadas'
+    }
+    return `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}`
   }
 
   if (!isClient) {
@@ -232,7 +240,7 @@ export default function TimelineContent() {
                 <h3 className="text-xl font-semibold mb-2">{event.title}</h3>
                 <p className="text-gray-600 mb-2">{event.description}</p>
                 <p className="text-sm text-gray-500">📅 {formatDateDisplay(event.event_date)}</p>
-                <p className="text-sm text-gray-500">📍 {event.lat.toFixed(4)}, {event.lng.toFixed(4)}</p>
+                <p className="text-sm text-gray-500">{formatLocation(event.lat, event.lng)}</p>
                 {event.characters && Array.isArray(event.characters) && event.characters.length > 0 && (
                   <div className="mt-2">
                     <strong>{t('historicalFigures')}:</strong>

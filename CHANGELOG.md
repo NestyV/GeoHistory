@@ -10,10 +10,31 @@ Aplicación colaborativa de mapas históricos donde los usuarios pueden marcar e
 
 ---
 
-## 1. Migración de Supabase a PostgreSQL Local (2026-05-25)
+## 0. Correcciones Admin (2026-07-06)
+
+### Problemas corregidos
+- Página "All Events" fallando por combinación de respuestas parciales y ordenamiento con campo de fecha inconsistente.
+- Página "Places" redirigiendo a mapa por validación de rol prematura en el primer render.
+
+### Cambios aplicados
+- Normalización del endpoint de pendientes en cliente API para aceptar array o payload envuelto.
+- Carga resiliente en "All Events" y "Places" usando `Promise.allSettled` para no bloquear toda la pantalla si un endpoint falla.
+- Verificación de rol estabilizada en cliente (con fallback a usuario de `localStorage`) antes de redirigir.
+- Ordenamiento de eventos corregido para usar el helper de fecha y soportar estructuras mixtas (`event_date`/`start_date`).
+- Render de personajes en "All Events" robustecido para soportar payloads heterogéneos (`array`, JSON string o CSV) y evitar errores de runtime.
+- Página "Places" alineada con el patrón de autorización que ya funciona en "Place Types" para evitar redirecciones incorrectas a `/map`.
+
+### Archivos modificados
+- `lib/api.ts`
+- `app/admin/events/EventsContent.tsx`
+- `app/admin/places/page.tsx`
+
+---
+
+## 1. Migración a PostgreSQL Local (2026-05-25)
 
 ### Cambios principales
-- Eliminada dependencia de Supabase
+- Eliminada dependencia del proveedor anterior
 - Configurado PostgreSQL en Docker con `docker-compose.yml`
 - Creado backend Express con endpoints REST
 - Implementada autenticación JWT
@@ -414,3 +435,46 @@ Documentación PostgreSQL: https://www.postgresql.org/docs/
 
 Licencia
 Este proyecto es de código abierto. Contribuciones son bienvenidas.
+
+---
+
+## 12. Checkpoint de Reanudacion (2026-07-03)
+
+### Completado en esta sesion
+- Eliminadas todas las menciones al proveedor legado en codigo y documentacion.
+- Eliminado archivo legado no usado: lib/database.ts.
+- Ajustadas referencias en documentacion para reflejar stack actual (PostgreSQL local + backend Express).
+- Correcciones de TypeScript estricto en frontend para permitir build de produccion.
+- Build de frontend verificado exitosamente con next build.
+- Integracion backend verificada: 7 suites, 28 tests aprobados.
+- Lint frontend verificado sin warnings ni errores.
+
+### Estado actual
+- Frontend: compila en produccion.
+- Backend: type-check e integracion OK.
+- Base de datos objetivo: PostgreSQL local en Docker (WSL).
+
+### Proximo paso sugerido (al retomar)
+1. Levantar entorno completo con npm run dev.
+2. Validar flujo manual end-to-end: auth, mapa, timeline y panel admin.
+3. Si todo esta bien, crear commit de checkpoint y continuar con los items pendientes del IMPLEMENTATION_PLAN de Fase 2+.
+
+### Incidencias resueltas de arranque (2026-07-03)
+- Se alinearon versiones para compatibilidad real del stack actual:
+  - next: 14.2.35
+  - eslint-config-next: 14.2.35
+- Se resolvio conflicto de peer deps en Docker durante npm ci del frontend.
+- Se ejecuto npm audit fix en backend y quedo sin vulnerabilidades reportadas.
+- Se agrego verificacion de raiz en scripts/check-root.js para evitar ejecutar npm run dev desde backend/.
+- Se elimino el warning de docker-compose removiendo la clave version obsoleta en docker-compose.yml.
+
+### Secuencia correcta para levantar local
+1. npm --prefix backend install
+2. docker-compose up -d
+3. npm run dev
+
+### Estado para reanudacion futura
+- Backend: estable y respondiendo.
+- Map: carga marcadores y filtros.
+- Timeline: pendiente de la ultima verificacion de utilidades de imagen / bundle.
+- Cuando vuelvas, comparte una palabra clave corta y seguimos desde aqui sin re-triage.

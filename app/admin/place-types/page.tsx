@@ -44,26 +44,10 @@ export default function PlaceTypesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem('auth_token')
-      
       if (editingItem) {
-        await fetch(`http://localhost:3001/api/place-types/${editingItem.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(formData)
-        })
+        await api.updatePlaceType(editingItem.id, formData)
       } else {
-        await fetch('http://localhost:3001/api/place-types', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(formData)
-        })
+        await api.createPlaceType(formData)
       }
       
       setShowForm(false)
@@ -78,20 +62,8 @@ export default function PlaceTypesPage() {
   const handleDelete = async (id: string) => {
     if (confirm('¿Estás seguro de que quieres eliminar este tipo de lugar?')) {
       try {
-        const token = localStorage.getItem('auth_token')
-        const response = await fetch(`http://localhost:3001/api/place-types/${id}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-        
-        if (response.ok) {
-          fetchPlaceTypes()
-        } else {
-          const error = await response.json()
-          alert(error.error || 'Error al eliminar')
-        }
+        await api.deletePlaceType(id)
+        fetchPlaceTypes()
       } catch (error) {
         console.error('Error deleting place type:', error)
         alert('Error al eliminar el tipo de lugar')

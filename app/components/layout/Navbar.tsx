@@ -46,6 +46,7 @@ export default function Navbar() {
 	}
 
 	const canAccessAdmin = userRole === 'curator' || userRole === 'super_user'
+	const roleLabel = userRole === 'super_user' ? t('admin') : userRole === 'curator' ? t('curator') : userRole === 'regular' ? t('regular') : null
 
 	return (
 		<nav className="bg-gray-900 text-white p-4">
@@ -61,6 +62,9 @@ export default function Navbar() {
 					<Link href="/timeline" className="hover:text-blue-300">
 						{t('timeline')}
 					</Link>
+					<Link href="/travel-animation" className="hover:text-amber-300">
+						{t('travelAnimation')}
+					</Link>
 
 					{canAccessAdmin && (
 						<Link href="/admin" className="hover:text-green-300 font-semibold">
@@ -74,7 +78,7 @@ export default function Navbar() {
 						<div className="flex gap-4 items-center">
 							<span className="text-sm">
 								{currentUser.email}
-								{userRole && ` (${t(userRole)})`}
+								{roleLabel && ` (${roleLabel})`}
 							</span>
 							<button
 								onClick={handleLogout}

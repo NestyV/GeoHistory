@@ -6,6 +6,7 @@
 import { Character } from '@/types';
 import { characterRepository } from '@/repositories/CharacterRepository';
 import { eventRepository } from '@/repositories/EventRepository';
+import { query } from '@/utils/database';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '@/utils/errors';
 import { defaultLogger } from '@/utils/logger';
 
@@ -15,16 +16,57 @@ type Actor = {
 };
 
 export class CharacterService {
+  private normalizeFrameIds(characterData: Partial<Character> & { frame_ids?: string[] }): string[] | undefined {
+    if (characterData.frame_ids !== undefined) {
+      return Array.from(
+        new Set(
+          characterData.frame_ids
+            .filter((frameId): frameId is string => typeof frameId === 'string' && frameId.trim().length > 0)
+            .map((frameId) => frameId.trim()),
+        ),
+      );
+    }
+
+    if (characterData.frame_id !== undefined) {
+      if (typeof characterData.frame_id !== 'string') {
+        return [];
+      }
+
+      const frameId = characterData.frame_id.trim();
+      return frameId ? [frameId] : [];
+    }
+
+    return undefined;
+  }
+
+  private async validateFrameIds(frameIds: string[]): Promise<void> {
+    if (frameIds.length === 0) {
+      return;
+    }
+
+    const result = await query<{ id: string }>(
+      'SELECT id FROM frames WHERE id = ANY($1::uuid[])',
+      [frameIds],
+    );
+
+    if (result.rows.length !== frameIds.length) {
+      const foundIds = new Set(result.rows.map((row) => row.id));
+      const missingIds = frameIds.filter((frameId) => !foundIds.has(frameId));
+      throw new ValidationError(`Unknown historical frame id(s): ${missingIds.join(', ')}`);
+    }
+  }
+
   /**
    * Get all characters with pagination
    */
-  async getAllCharacters(limit?: number, offset?: number): Promise<{ characters: Character[]; total: number }> {
+  async getAllCharacters(limit?: number, offset?: number, frameId?: string): Promise<{ characters: Character[]; total: number }> {
     try {
-      const { rows: characters, total } = await characterRepository.findAll(
-        {},
-        limit,
-        offset,
-      );
+      if (frameId) {
+        const characters = await characterRepository.findByFrame(frameId);
+        return { characters, total: characters.length };
+      }
+
+      const { rows: characters, total } = await characterRepository.findAll({}, limit, offset);
       return { characters, total };
     } catch (error) {
       defaultLogger.error('Error getting all characters', error as Error);
@@ -98,7 +140,7 @@ export class CharacterService {
   /**
    * Create character (curator/super_user only)
    */
-  async createCharacter(characterData: Partial<Character> & { name?: string; description?: string }, actor: Actor): Promise<Character> {
+  async createCharacter(characterData: Partial<Character> & { name?: string; description?: string; frame_ids?: string[] }, actor: Actor): Promise<Character> {
     try {
       if (actor.role !== 'curator' && actor.role !== 'super_user') {
         throw new AuthorizationError('Only curators and super users can create characters');
@@ -113,10 +155,15 @@ export class CharacterService {
         throw new ConflictError('Character with this name already exists');
       }
 
+      const frameIds = this.normalizeFrameIds(characterData) ?? [];
+      await this.validateFrameIds(frameIds);
+
       const created = await characterRepository.create({
         ...characterData,
         name: characterData.name.trim(),
         description: characterData.description || '',
+        frame_id: frameIds[0] || null,
+        frame_ids: frameIds,
         created_at: new Date(),
       } as Partial<Character>);
 
@@ -133,7 +180,7 @@ export class CharacterService {
   /**
    * Update character (curator/super_user only)
    */
-  async updateCharacter(characterId: string, data: Partial<Character>, actor: Actor): Promise<Character> {
+  async updateCharacter(characterId: string, data: Partial<Character> & { frame_ids?: string[] }, actor: Actor): Promise<Character> {
     try {
       if (actor.role !== 'curator' && actor.role !== 'super_user') {
         throw new AuthorizationError('Only curators and super users can update characters');
@@ -144,8 +191,14 @@ export class CharacterService {
         throw new NotFoundError('Character', characterId);
       }
 
+      const frameIds = this.normalizeFrameIds(data);
+      if (frameIds !== undefined) {
+        await this.validateFrameIds(frameIds);
+      }
+
       const updated = await characterRepository.update(characterId, {
         ...data,
+        ...(frameIds !== undefined ? { frame_id: frameIds[0] || null, frame_ids: frameIds } : {}),
       } as Partial<Character>);
 
       if (!updated) {

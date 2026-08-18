@@ -62,6 +62,26 @@ export const initializeDatabase = async (): Promise<void> => {
       )
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS character_frames (
+        character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+        frame_id UUID NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (character_id, frame_id)
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_character_frames_frame_id ON character_frames(frame_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_character_frames_character_id ON character_frames(character_id)');
+
+    await client.query(`
+      INSERT INTO character_frames (character_id, frame_id, position, created_at)
+      SELECT id, frame_id, 0, NOW()
+      FROM characters
+      WHERE frame_id IS NOT NULL
+      ON CONFLICT (character_id, frame_id) DO NOTHING
+    `);
+
     client.release();
     defaultLogger.info('✓ Database connected successfully');
   } catch (error) {

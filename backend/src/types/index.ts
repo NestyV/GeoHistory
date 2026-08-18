@@ -21,14 +21,20 @@ export interface User {
 export interface Event {
   id: string;
   user_id: string;
+  frame_id?: string | null;
   title: string;
   description: string;
   status: 'pending' | 'approved' | 'rejected';
-  start_date: Date;
+  event_date: Date;
   end_date?: Date;
-  location: string;
-  latitude: number;
-  longitude: number;
+  lat: number;
+  lng: number;
+  characters?: Array<string | { id?: string; name: string }>;
+  // Backward-compat fields for mixed payloads while refactor stabilizes.
+  start_date?: Date;
+  latitude?: number;
+  longitude?: number;
+  location?: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -36,11 +42,18 @@ export interface Event {
 export interface Character {
   id: string;
   name: string;
+  alias?: string;
   description: string;
+  image_url?: string;
+  frame_id?: string | null;
+  frame_ids?: string[];
   birth_date?: Date;
   death_date?: Date;
-  created_at: Date;
-  updated_at: Date;
+  face_crop_x?: number;
+  face_crop_y?: number;
+  face_crop_scale?: number;
+  face_crop_size?: number;
+  updated_at?: Date;
 }
 
 export interface Place {
@@ -142,21 +155,31 @@ export interface ErrorResponse {
 export interface CreateEventRequest {
   title: string;
   description: string;
-  start_date: string; // ISO 8601 format
+  event_date?: string; // ISO 8601 format
+  start_date?: string; // Backward compatibility
   end_date?: string;
-  location: string;
-  latitude: number;
-  longitude: number;
+  frame_id?: string | null;
+  characters?: Array<string | { id?: string; name: string }>;
+  lat?: number;
+  lng?: number;
+  latitude?: number;
+  longitude?: number;
+  location?: string;
 }
 
 export interface UpdateEventRequest {
   title?: string;
   description?: string;
+  event_date?: string;
   start_date?: string;
   end_date?: string;
-  location?: string;
+  frame_id?: string | null;
+  characters?: Array<string | { id?: string; name: string }>;
+  lat?: number;
+  lng?: number;
   latitude?: number;
   longitude?: number;
+  location?: string;
 }
 
 export interface ApproveEventRequest {

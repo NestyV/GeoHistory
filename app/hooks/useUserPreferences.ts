@@ -11,7 +11,7 @@ interface Preferences {
 }
 
 export function useUserPreferences(userId: string | null) {
-  const saveTimeout = useRef<NodeJSoudTimeout>()
+  const saveTimeout = useRef<NodeJS.Timeout>()
 
   const getToken = () => {
     if (typeof window !== 'undefined') {

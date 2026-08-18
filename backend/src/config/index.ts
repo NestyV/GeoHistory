@@ -4,10 +4,33 @@
  * See specs/Operations.md § 1.3 for environment variable reference
  */
 
+import { existsSync } from 'fs';
+import path from 'path';
 import { config as dotenvConfig } from 'dotenv';
 
-// Load .env file
-dotenvConfig();
+const isProduction = process.env.NODE_ENV === 'production';
+const developmentDefaults: Record<string, string> = {
+  DATABASE_URL: 'postgresql://geohistory_user:change_this_password_12345@localhost:5432/geohistory',
+  JWT_SECRET: 'your-super-secret-key-must-be-min-32-chars-change-in-production',
+  JWT_REFRESH_SECRET: 'your-refresh-secret-must-be-min-32-chars-change-in-production',
+  EMAIL_FROM: '',
+};
+
+// Load environment files from the backend folder and repository root.
+const envCandidates = [
+  path.resolve(process.cwd(), '.env.local'),
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '..', '.env.local'),
+  path.resolve(process.cwd(), '..', '.env'),
+  path.resolve(process.cwd(), '..', '..', '.env.local'),
+  path.resolve(process.cwd(), '..', '..', '.env'),
+];
+
+for (const envPath of envCandidates) {
+  if (existsSync(envPath)) {
+    dotenvConfig({ path: envPath, override: false });
+  }
+}
 
 // ============================================================================
 // ENVIRONMENT VARIABLES
@@ -15,10 +38,13 @@ dotenvConfig();
 
 const getEnvVar = (key: string, defaultValue?: string): string => {
   const value = process.env[key];
-  if (!value && !defaultValue) {
+  if ((value === undefined || value === '') && defaultValue === undefined) {
+    if (!isProduction && developmentDefaults[key] !== undefined) {
+      return developmentDefaults[key];
+    }
     throw new Error(`Missing required environment variable: ${key}`);
   }
-  return value || defaultValue || '';
+  return value ?? defaultValue ?? '';
 };
 
 const getEnvNumber = (key: string, defaultValue?: number): number => {
@@ -33,6 +59,16 @@ const getEnvBoolean = (key: string, defaultValue = false): boolean => {
   const value = process.env[key];
   if (value === undefined) return defaultValue;
   return value.toLowerCase() === 'true' || value === '1';
+};
+
+const getEnvList = (key: string, defaultValue: string[]): string[] => {
+  const value = process.env[key];
+  if (!value || !value.trim()) return defaultValue;
+  const parsed = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return parsed.length > 0 ? parsed : defaultValue;
 };
 
 // ============================================================================
@@ -84,7 +120,7 @@ export const config = {
 
   // CORS
   cors: {
-    origin: getEnvVar('CORS_ORIGIN', 'http://localhost:3000'),
+    origin: getEnvList('CORS_ORIGIN', ['http://localhost:3000']),
     credentials: getEnvBoolean('CORS_CREDENTIALS', true),
   },
 

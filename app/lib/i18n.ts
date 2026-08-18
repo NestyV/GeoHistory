@@ -37,6 +37,7 @@ export const translations = {
     // Navigation
     map: 'Mapa',
     timeline: 'Línea de Tiempo',
+    travelAnimation: 'Animación de Viaje',
     login: 'Iniciar Sesión',
     logout: 'Cerrar Sesión',
     signUp: 'Registrarse',
@@ -142,6 +143,7 @@ export const translations = {
     // Navigation
     map: 'Map',
     timeline: 'Timeline',
+    travelAnimation: 'Travel Animation',
     login: 'Login',
     logout: 'Logout',
     signUp: 'Sign Up',
@@ -247,6 +249,7 @@ export const translations = {
     // Navigation
     map: 'Mapa',
     timeline: 'Linha do Tempo',
+    travelAnimation: 'Animação de Viagem',
     login: 'Entrar',
     logout: 'Sair',
     signUp: 'Registrar',

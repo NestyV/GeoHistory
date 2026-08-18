@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -19,7 +19,8 @@ L.Icon.Default.mergeOptions({
 
 const formatDateDMY = (dateString: string) => {
   if (!dateString) return ''
-  const [year, month, day] = dateString.split('T')[0].split('-')
+  const datePart = dateString.split('T')[0] || ''
+  const [year = '', month = '', day = ''] = datePart.split('-')
   return `${day}/${month}/${year}`
 }
 
@@ -74,8 +75,9 @@ export default function Map() {
   const dataLoaded = useRef(false)
   const saveTimeout = useRef<NodeJS.Timeout>()
   const mapRef = useRef<L.Map | null>(null)
+  const markerRefs = useRef<Record<string, L.Marker | null>>({})
 
-  const savePreferences = async () => {
+  const savePreferences = useCallback(async () => {
     const token = localStorage.getItem('auth_token')
     if (!token || !currentUser) return
     
@@ -88,28 +90,18 @@ export default function Map() {
     }
     
     try {
-      await fetch('http://localhost:3001/api/user/preferences', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      })
+      await api.saveUserPreferences(payload)
     } catch (error) {
       console.error('Error saving preferences:', error)
     }
-  }
+  }, [currentUser, selectedFrameId, selectedYear, mapCenter, mapZoom])
 
   const loadPreferences = async () => {
     const token = localStorage.getItem('auth_token')
     if (!token) return null
     
     try {
-      const response = await fetch('http://localhost:3001/api/user/preferences', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      const data = await response.json()
+      const data = await api.getUserPreferences()
       if (data.hasPreferences && data.preferences) {
         return data.preferences
       }
@@ -125,45 +117,51 @@ export default function Map() {
   }, [])
 
   useEffect(() => {
-    if (!currentUser) return
-    
+    isMounted.current = true
+
     const init = async () => {
       setLoading(true)
-      
-      const [eventsData, framesData, charactersData] = await Promise.all([
-        api.getEvents(),
-        api.getFrames(),
-        api.getCharacters()
-      ])
-      
-      setEvents(eventsData || [])
-      setFrames(framesData || [])
-      setCharacters(charactersData || [])
-      
-      const prefs = await loadPreferences()
-      
-      if (prefs) {
-        if (prefs.last_frame_id && framesData?.find((f: any) => f.id === prefs.last_frame_id)) {
-          setSelectedFrameId(prefs.last_frame_id)
+
+      try {
+        const [eventsData, framesData, charactersData] = await Promise.all([
+          api.getEvents(),
+          api.getFrames(),
+          api.getCharacters()
+        ])
+
+        if (isMounted.current) {
+          setEvents(eventsData || [])
+          setFrames(framesData || [])
+          setCharacters(charactersData || [])
+        }
+
+        const prefs = currentUser ? await loadPreferences() : null
+
+        if (prefs) {
+          if (prefs.last_frame_id && framesData?.find((f: any) => f.id === prefs.last_frame_id)) {
+            setSelectedFrameId(prefs.last_frame_id)
+          } else if (framesData && framesData.length > 0) {
+            setSelectedFrameId(framesData[0]?.id ?? null)
+          }
+
+          if (prefs.last_year) {
+            setSelectedYear(prefs.last_year)
+            setUserSelectedYear(true)
+          }
+
+          if (prefs.last_lat && prefs.last_lng && prefs.last_zoom) {
+            setMapCenter([prefs.last_lat, prefs.last_lng])
+            setMapZoom(prefs.last_zoom)
+          }
         } else if (framesData && framesData.length > 0) {
-          setSelectedFrameId(framesData[0].id)
+          setSelectedFrameId(framesData[0]?.id ?? null)
         }
-        
-        if (prefs.last_year) {
-          setSelectedYear(prefs.last_year)
-          setUserSelectedYear(true)
-        }
-        
-        if (prefs.last_lat && prefs.last_lng && prefs.last_zoom) {
-          setMapCenter([prefs.last_lat, prefs.last_lng])
-          setMapZoom(prefs.last_zoom)
-        }
-      } else if (framesData && framesData.length > 0) {
-        setSelectedFrameId(framesData[0].id)
+      } catch (error) {
+        console.error('Error loading map data:', error)
+      } finally {
+        dataLoaded.current = true
+        if (isMounted.current) setLoading(false)
       }
-      
-      dataLoaded.current = true
-      setLoading(false)
     }
     
     init()
@@ -200,7 +198,7 @@ export default function Map() {
     return () => {
       if (saveTimeout.current) clearTimeout(saveTimeout.current)
     }
-  }, [selectedFrameId, selectedYear, mapCenter, mapZoom, currentUser, dataLoaded])
+  }, [selectedFrameId, selectedYear, mapCenter, mapZoom, currentUser, savePreferences])
 
   // Actualizar años según el marco seleccionado
   useEffect(() => {
@@ -216,7 +214,7 @@ export default function Map() {
       setYears(newYears)
       
       if (!userSelectedYear && newYears.length > 0 && selectedYear === null) {
-        setSelectedYear(newYears[0])
+        setSelectedYear(newYears[0] ?? null)
       }
     } else {
       const frameEvents = events.filter(e => 
@@ -228,7 +226,7 @@ export default function Map() {
       setYears(newYears)
       
       if (selectedYear !== null && !newYears.includes(selectedYear)) {
-        setSelectedYear(newYears.length > 0 ? newYears[0] : null)
+        setSelectedYear(newYears.length > 0 ? (newYears[0] ?? null) : null)
         setUserSelectedYear(false)
       }
     }
@@ -278,9 +276,16 @@ export default function Map() {
     return details.alias || details.name
   }
 
+  const formatLocation = (lat: number | null, lng: number | null) => {
+    if (lat == null || lng == null) {
+      return '📍 Sin coordenadas'
+    }
+    return `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}`
+  }
+
   const formatTooltipCharacterList = (characterNames: string[]) => {
     if (characterNames.length === 0) return null
-    if (characterNames.length === 1) return getTooltipDisplayName(characterNames[0])
+    if (characterNames.length === 1) return getTooltipDisplayName(characterNames[0] ?? '')
     if (characterNames.length === 2) return characterNames.map(n => getTooltipDisplayName(n)).join(' & ')
     if (characterNames.length === 3) return characterNames.map(n => getTooltipDisplayName(n)).join(', ')
     return `${characterNames.slice(0, 2).map(n => getTooltipDisplayName(n)).join(', ')} & ${characterNames.length - 2} ${t('more')}`
@@ -298,13 +303,32 @@ export default function Map() {
 
   // Handlers para exclusión mutua
   const handleMarkerClick = (eventId: string) => {
-    if (activePopup === eventId) {
-      setActivePopup(null)
-    } else {
-      setActivePopup(eventId)
-      setHoveredEvent(null) // Cerrar tooltip si estaba abierto
-    }
+    setActivePopup(eventId)
+    setHoveredEvent(null)
   }
+
+  useEffect(() => {
+    Object.entries(markerRefs.current).forEach(([eventId, marker]) => {
+      if (!marker) return
+      if (activePopup && eventId === activePopup) {
+        marker.openPopup()
+      } else {
+        marker.closePopup()
+      }
+    })
+  }, [activePopup])
+
+  useEffect(() => {
+    if (!activePopup) {
+      setHoveredEvent(null)
+      return
+    }
+
+    const marker = markerRefs.current[activePopup]
+    if (marker) {
+      marker.openPopup()
+    }
+  }, [activePopup, filteredEvents])
 
   const handleMarkerHover = (eventId: string) => {
     if (!activePopup) {
@@ -316,13 +340,9 @@ export default function Map() {
     setHoveredEvent(null)
   }
 
-  const handleClosePopup = () => {
-    setActivePopup(null)
-  }
-
   // Renderizar tooltip personalizado (no de Leaflet)
   const renderCustomTooltip = (event: any) => {
-    if (hoveredEvent !== event.id) return null
+    if (hoveredEvent !== String(event.id)) return null
     
     const characterNames = event.characters?.map((c: any) => typeof c === 'string' ? c : c.name) || []
     const formattedCharacters = formatTooltipCharacterList(characterNames)
@@ -331,19 +351,21 @@ export default function Map() {
       ? `${event.place_type_icon || '📍'} ${event.place_name}`
       : `📍 ${event.lat.toFixed(4)}, ${event.lng.toFixed(4)}`
     
-    // Obtener coordenadas de pantalla para posicionar el tooltip
+    // Convert marker position from map container coordinates to viewport coordinates.
     if (!mapRef.current) return null
+    const mapContainer = mapRef.current.getContainer()
+    const mapRect = mapContainer.getBoundingClientRect()
     const point = mapRef.current.latLngToContainerPoint(L.latLng(event.lat, event.lng))
     
     return (
       <div
         className="fixed z-[10000] bg-white px-3 py-2 rounded shadow-lg border border-gray-200 text-sm pointer-events-none"
         style={{
-          top: point.y - 80,
-          left: point.x - 110,
+          top: mapRect.top + point.y - 12,
+          left: mapRect.left + point.x,
           minWidth: '120px',
           maxWidth: '220px',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, -100%)',
         }}
       >
         <div className="font-bold">{event.title}</div>
@@ -473,35 +495,40 @@ export default function Map() {
           
           <MapEventManager onAddEvent={handleAddEvent} onMapMove={handleMapMove} />
           
-          {filteredEvents.map(event => {
-            const characterNames = event.characters?.map((c: any) => typeof c === 'string' ? c : c.name) || []
-            const isPopupActive = activePopup === event.id
+          {filteredEvents
+            .filter(event => event.lat != null && event.lng != null)
+            .map(event => {
+            const eventId = String(event.id)
 
             return (
               <Marker
-                key={event.id}
+                key={eventId}
                 position={[event.lat, event.lng]}
+                ref={(marker) => {
+                  markerRefs.current[eventId] = marker
+                }}
                 eventHandlers={{
-                  click: () => handleMarkerClick(event.id),
-                  mouseover: () => handleMarkerHover(event.id),
+                  click: () => handleMarkerClick(eventId),
+                  mouseover: () => handleMarkerHover(eventId),
                   mouseout: handleMarkerLeave,
                 }}
               >
-                {/* Popup nativo de Leaflet (solo click) */}
                 <Popup
-                  open={isPopupActive}
+                  key={`popup-${event.id}`}
                   autoPan={false}
                   closeOnClick={false}
+                  eventHandlers={{
+                    popupopen: () => {
+                      if (activePopup !== eventId) setActivePopup(eventId)
+                    },
+                    popupclose: () => {
+                      if (activePopup === eventId) setActivePopup(null)
+                    },
+                  }}
                 >
                   <div>
                     <div className="flex justify-between items-start">
                       <strong className="text-lg">{event.title}</strong>
-                      <button
-                        onClick={handleClosePopup}
-                        className="text-gray-500 hover:text-gray-700 ml-2 text-lg"
-                      >
-                        ×
-                      </button>
                     </div>
                     <span className="text-sm text-gray-600">📅 {formatDateDMY(event.event_date)}</span>
                     {event.description && (
@@ -517,7 +544,7 @@ export default function Map() {
                           )}
                         </>
                       ) : (
-                        <span>📍 {event.lat.toFixed(4)}, {event.lng.toFixed(4)}</span>
+                        <span>{formatLocation(event.lat, event.lng)}</span>
                       )}
                     </div>
                     
@@ -539,7 +566,7 @@ export default function Map() {
                             return (
                               <span key={i} className="bg-gray-100 px-2 py-1 rounded text-xs flex items-center gap-1">
                                 {charDetails.image_url && (
-                                  <img src={charDetails.image_url} alt={charName} className="w-4 h-4 rounded-full" />
+                                  <OptimizedImage src={charDetails.image_url} alt={charName} className="w-4 h-4 rounded-full" />
                                 )}
                                 {displayName}
                               </span>
@@ -562,7 +589,7 @@ export default function Map() {
         {filteredEvents.map(event => renderCustomTooltip(event))}
       </div>
 
-      {showEventForm && newEventLat && newEventLng && (
+      {showEventForm && newEventLat !== null && newEventLng !== null && (
         <EventForm
           lat={newEventLat}
           lng={newEventLng}

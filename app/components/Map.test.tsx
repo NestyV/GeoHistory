@@ -36,7 +36,7 @@ jest.mock('./EventForm', () => {
 
 jest.mock('./OptimizedImage', () => {
   return function MockOptimizedImage(props: any) {
-    return <img alt={props.alt || 'optimized'} />;
+    return <div data-testid="mock-optimized-image">{props.alt || 'optimized'}</div>;
   };
 });
 
@@ -52,6 +52,8 @@ jest.mock('@/lib/api', () => ({
     getEvents: jest.fn(),
     getFrames: jest.fn(),
     getCharacters: jest.fn(),
+    getUserPreferences: jest.fn(),
+    saveUserPreferences: jest.fn(),
   },
 }));
 
@@ -68,6 +70,8 @@ describe('Map interaction', () => {
     (api.getEvents as jest.Mock).mockResolvedValue([]);
     (api.getFrames as jest.Mock).mockResolvedValue([{ id: 'f-1', name: 'Frame 1' }]);
     (api.getCharacters as jest.Mock).mockResolvedValue([]);
+    (api.getUserPreferences as jest.Mock).mockResolvedValue({ hasPreferences: false });
+    (api.saveUserPreferences as jest.Mock).mockResolvedValue({ ok: true });
     (global as any).fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ hasPreferences: false }),

@@ -1,23 +1,8 @@
-'use client'
-
-import { useState, useEffect } from 'react'
 import Navbar from './components/layout/Navbar'
 import Link from 'next/link'
-import { t, getClientLanguage } from '@/app/lib/i18n'
+import { t } from '@/app/lib/i18n'
 
 export default function Home() {
-  // Estado para evitar errores de hidratación
-  const [isClient, setIsClient] = useState(false)
-
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  // Renderizar solo en el cliente después de la hidratación
-  if (!isClient) {
-    return null
-  }
-
   return (
     <>
       <Navbar />

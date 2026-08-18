@@ -45,9 +45,19 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS characters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT UNIQUE NOT NULL,
+  frame_id UUID REFERENCES frames(id) ON DELETE SET NULL,
   description TEXT,
   image_url TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create character-frame relationships table
+CREATE TABLE IF NOT EXISTS character_frames (
+  character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  frame_id UUID NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (character_id, frame_id)
 );
 
 -- Create refresh tokens table for JWT rotation/revocation
@@ -74,6 +84,8 @@ CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
 CREATE INDEX IF NOT EXISTS idx_frames_start_date ON frames(start_date);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_id ON refresh_tokens(token_id);
+CREATE INDEX IF NOT EXISTS idx_character_frames_frame_id ON character_frames(frame_id);
+CREATE INDEX IF NOT EXISTS idx_character_frames_character_id ON character_frames(character_id);
 
 -- Insert seed data (optional demo data)
 INSERT INTO frames (name, description, start_date, end_date) VALUES

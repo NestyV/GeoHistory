@@ -14,6 +14,23 @@ const router = Router();
 const validateCharacterPayload = (input: any, isPartial: boolean = false): Record<string, unknown> => {
   const output: Record<string, unknown> = {};
 
+  const normalizeFrameIds = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      throw new ValidationError('Character frame_ids must be an array of strings');
+    }
+
+    const frameIds = value
+      .filter((frameId): frameId is string => typeof frameId === 'string')
+      .map((frameId) => frameId.trim())
+      .filter((frameId) => frameId.length > 0);
+
+    if (frameIds.length !== value.filter((frameId) => typeof frameId === 'string' && frameId.trim().length > 0).length) {
+      throw new ValidationError('Character frame_ids must contain only non-empty strings');
+    }
+
+    return Array.from(new Set(frameIds));
+  };
+
   if (!isPartial || input?.name !== undefined) {
     if (typeof input?.name !== 'string' || !input.name.trim()) {
       throw new ValidationError('Character name is required');
@@ -22,24 +39,69 @@ const validateCharacterPayload = (input: any, isPartial: boolean = false): Recor
   }
 
   if (input?.description !== undefined) {
-    if (typeof input.description !== 'string') {
+    if (input.description !== null && typeof input.description !== 'string') {
       throw new ValidationError('Character description must be a string');
     }
     output.description = input.description;
   }
 
   if (input?.alias !== undefined) {
-    if (typeof input.alias !== 'string') {
-      throw new ValidationError('Character alias must be a string');
+    if (input.alias !== null && typeof input.alias !== 'string') {
+      throw new ValidationError('Character alias must be a string or null');
     }
     output.alias = input.alias;
   }
 
   if (input?.image_url !== undefined) {
-    if (typeof input.image_url !== 'string') {
-      throw new ValidationError('Character image_url must be a string');
+    if (input.image_url !== null && typeof input.image_url !== 'string') {
+      throw new ValidationError('Character image_url must be a string or null');
     }
     output.image_url = input.image_url;
+  }
+
+  if (input?.face_crop_x !== undefined) {
+    if (input.face_crop_x !== null && typeof input.face_crop_x !== 'number') {
+      throw new ValidationError('Character face_crop_x must be a number or null');
+    }
+    output.face_crop_x = input.face_crop_x;
+  }
+
+  if (input?.face_crop_y !== undefined) {
+    if (input.face_crop_y !== null && typeof input.face_crop_y !== 'number') {
+      throw new ValidationError('Character face_crop_y must be a number or null');
+    }
+    output.face_crop_y = input.face_crop_y;
+  }
+
+  if (input?.face_crop_scale !== undefined) {
+    if (input.face_crop_scale !== null && typeof input.face_crop_scale !== 'number') {
+      throw new ValidationError('Character face_crop_scale must be a number or null');
+    }
+    output.face_crop_scale = input.face_crop_scale;
+  }
+
+  if (input?.face_crop_size !== undefined) {
+    if (input.face_crop_size !== null && typeof input.face_crop_size !== 'number') {
+      throw new ValidationError('Character face_crop_size must be a number or null');
+    }
+    output.face_crop_size = input.face_crop_size;
+  }
+
+  if (input?.frame_id !== undefined) {
+    if (input.frame_id !== null && typeof input.frame_id !== 'string') {
+      throw new ValidationError('Character frame_id must be a string or null');
+    }
+    const frameId = typeof input.frame_id === 'string' ? input.frame_id.trim() : null;
+    output.frame_id = frameId || null;
+    if (output.frame_ids === undefined) {
+      output.frame_ids = frameId ? [frameId] : [];
+    }
+  }
+
+  if (input?.frame_ids !== undefined) {
+    const frameIds = normalizeFrameIds(input.frame_ids);
+    output.frame_ids = frameIds;
+    output.frame_id = frameIds[0] || null;
   }
 
   return output;
@@ -53,6 +115,9 @@ const validateCharacterPayload = (input: any, isPartial: boolean = false): Recor
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   const logger = req.logger;
   try {
+    const frameId = typeof req.query.frame_id === 'string' && req.query.frame_id.trim().length > 0
+      ? req.query.frame_id
+      : undefined;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
     const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
 
@@ -63,7 +128,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       throw new ValidationError('Offset must be non-negative');
     }
 
-    const { characters, total } = await characterService.getAllCharacters(limit, offset);
+    const { characters, total } = await characterService.getAllCharacters(limit, offset, frameId);
 
     logger?.info('Characters listed', { count: characters.length, total });
     res.status(200).json({

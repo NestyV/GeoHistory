@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { api, auth } from '@/lib/api'
 import Navbar from '@/app/components/layout/Navbar'
 import AdminNav from '@/app/components/layout/AdminNav'
+import OptimizedImage from '@/app/components/common/OptimizedImage'
 import { useRouter } from 'next/navigation'
 import { t } from '@/app/lib/i18n'
 
@@ -14,9 +15,64 @@ const formatDateDisplay = (dateString: string) => {
   return `${day}/${month}/${year}`
 }
 
+const getEventDate = (event: any): string => event.event_date || event.start_date || ''
+
+const getEventCharacters = (event: any): any[] => {
+  const rawCharacters = event?.characters
+  if (Array.isArray(rawCharacters)) return rawCharacters
+
+  if (typeof rawCharacters === 'string') {
+    const trimmed = rawCharacters.trim()
+    if (!trimmed) return []
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return trimmed
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean)
+    }
+  }
+
+  return []
+}
+
+const getEventLat = (event: any): number | null => {
+  const value = event.lat ?? event.latitude
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const getEventLng = (event: any): number | null => {
+  const value = event.lng ?? event.longitude
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 const formatDateForInput = (utcDateString: string) => {
   if (!utcDateString) return ''
   return utcDateString.split('T')[0] || ''
+}
+
+const isAdminDebugEnabled = (): boolean => {
+  if (typeof window === 'undefined') return false
+
+  const params = new URLSearchParams(window.location.search)
+  const queryValue = params.get('adminDebug')
+
+  if (queryValue === '1') {
+    localStorage.setItem('admin_debug', '1')
+    return true
+  }
+
+  if (queryValue === '0') {
+    localStorage.removeItem('admin_debug')
+    return false
+  }
+
+  return localStorage.getItem('admin_debug') === '1'
 }
 
 export default function EventsContent() {
@@ -35,6 +91,8 @@ export default function EventsContent() {
   const [newCharacterName, setNewCharacterName] = useState('')
   const [newCharacterDesc, setNewCharacterDesc] = useState('')
   const [newCharacterImageUrl, setNewCharacterImageUrl] = useState('')
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
   
   const [formData, setFormData] = useState({
     title: '',
@@ -48,44 +106,156 @@ export default function EventsContent() {
   
   const router = useRouter()
   const isMounted = useRef(true)
-  
-  const currentUser = auth.getUser()
-  const userRole = currentUser?.role
+  const debugRef = useRef(isAdminDebugEnabled())
+  const debugLog = useCallback((...args: any[]) => {
+    if (debugRef.current) {
+      console.log('[ADMIN EVENTS]', ...args)
+    }
+  }, [])
+
   const isSuperUser = userRole === 'super_user'
   const isCurator = userRole === 'curator'
   const hasAccess = isSuperUser || isCurator
 
+  useEffect(() => {
+    debugLog('Auth check started')
+    const user = auth.getUser()
+    if (user?.role) {
+      debugLog('Auth user from token', { id: user.id, role: user.role })
+      setUserRole(user.role)
+    } else {
+      setUserRole(null)
+      debugLog('No valid auth user found')
+    }
+
+    setAuthChecked(true)
+  }, [debugLog])
+
+  useEffect(() => {
+    if (!debugRef.current || typeof window === 'undefined') return
+
+    const onError = (event: ErrorEvent) => {
+      console.error('[ADMIN EVENTS][WINDOW ERROR]', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error,
+      })
+    }
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('[ADMIN EVENTS][UNHANDLED REJECTION]', event.reason)
+    }
+
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    }
+  }, [])
+
   const fetchData = useCallback(async () => {
     if (!isMounted.current) return
     try {
-      const [eventsData, framesData, charactersData] = await Promise.all([
+      debugLog('Fetch started')
+      const [approvedEventsResult, pendingEventsResult, framesResult, charactersResult] = await Promise.allSettled([
         api.getEvents(),
+        api.getPendingEvents(),
         api.getFrames(),
         api.getCharacters()
       ])
+
+      const approvedEventsData = approvedEventsResult.status === 'fulfilled' ? approvedEventsResult.value : []
+      const pendingEventsData = pendingEventsResult.status === 'fulfilled' ? pendingEventsResult.value : []
+      const framesData = framesResult.status === 'fulfilled' ? framesResult.value : []
+      const charactersData = charactersResult.status === 'fulfilled' ? charactersResult.value : []
+
+      if (approvedEventsResult.status === 'rejected') {
+        console.error('Error loading approved events:', approvedEventsResult.reason)
+      }
+      if (pendingEventsResult.status === 'rejected') {
+        console.error('Error loading pending events:', pendingEventsResult.reason)
+      }
+      if (framesResult.status === 'rejected') {
+        console.error('Error loading frames:', framesResult.reason)
+      }
+      if (charactersResult.status === 'rejected') {
+        console.error('Error loading characters:', charactersResult.reason)
+      }
+
+      debugLog('Fetch settled', {
+        approvedStatus: approvedEventsResult.status,
+        pendingStatus: pendingEventsResult.status,
+        framesStatus: framesResult.status,
+        charactersStatus: charactersResult.status,
+        approvedCount: approvedEventsData.length,
+        pendingCount: pendingEventsData.length,
+        framesCount: framesData.length,
+        charactersCount: charactersData.length,
+      })
+
       if (isMounted.current) {
-        setEvents(eventsData || [])
+        const combinedEvents = [
+          ...(approvedEventsData || []),
+          ...(pendingEventsData || []),
+        ]
+
+        const dedupedEvents = Array.from(
+          new Map(combinedEvents.map((event: any) => [event.id, event])).values()
+        )
+
+        setEvents(dedupedEvents)
         setFrames(framesData || [])
         setAllCharacters(charactersData || [])
         
         const years = Array.from(
           new Set<number>(
-            (eventsData || [])
-              .map((e: any) => new Date(e.event_date).getFullYear())
+            dedupedEvents
+              .map((e: any) => new Date(getEventDate(e)).getFullYear())
+              .filter((year: number) => Number.isFinite(year))
           )
         ).sort((a, b) => a - b)
         setAvailableYears(years)
+        debugLog('State updated', {
+          dedupedEvents: dedupedEvents.length,
+          yearsCount: years.length,
+        })
       }
     } catch (error) {
       console.error('Error fetching data:', error)
+      debugLog('Fetch threw', error)
     } finally {
       if (isMounted.current) setLoading(false)
+      debugLog('Fetch finished')
     }
-  }, [])
+  }, [debugLog])
 
   useEffect(() => {
+    if (!authChecked) return
+
+    debugLog('Gate check', {
+      authChecked,
+      userRole,
+      hasAccess,
+      hasToken: Boolean(auth.getToken()),
+    })
+
+    const hasToken = Boolean(auth.getToken())
+
+    if (!hasToken) {
+      debugLog('Redirecting to /auth due to missing/expired token')
+      router.push('/auth')
+      setLoading(false)
+      return
+    }
+
     if (!hasAccess) {
+      debugLog('Redirecting to /map due to missing access')
       router.push('/map')
+      setLoading(false)
       return
     }
     
@@ -94,21 +264,22 @@ export default function EventsContent() {
     
     return () => {
       isMounted.current = false
+      debugLog('Component unmounted')
     }
-  }, [router, fetchData, hasAccess])
+  }, [router, fetchData, hasAccess, authChecked, userRole, debugLog])
 
   const filteredEvents = events
     .filter(event => {
       if (selectedFrameFilter && event.frame_id !== selectedFrameFilter) return false
       if (selectedYearFilter) {
-        const eventYear = new Date(event.event_date).getFullYear()
+        const eventYear = new Date(getEventDate(event)).getFullYear()
         if (eventYear !== selectedYearFilter) return false
       }
       return true
     })
     .sort((a, b) => {
-      const dateA = new Date(a.event_date).getTime()
-      const dateB = new Date(b.event_date).getTime()
+      const dateA = new Date(getEventDate(a)).getTime()
+      const dateB = new Date(getEventDate(b)).getTime()
       return dateA - dateB
     })
 
@@ -178,13 +349,15 @@ export default function EventsContent() {
   }
 
   const handleEdit = (event: any) => {
-    const formattedDate = formatDateForInput(event.event_date)
+    const formattedDate = formatDateForInput(getEventDate(event))
+    const lat = getEventLat(event)
+    const lng = getEventLng(event)
     
-    const eventCharacters = event.characters?.map((c: any) => {
+    const eventCharacters = getEventCharacters(event).map((c: any) => {
       const charName = typeof c === 'string' ? c : c.name
       const character = allCharacters.find(ch => ch.name === charName)
       return character || { id: charName, name: charName }
-    }) || []
+    })
     
     setSelectedCharacters(eventCharacters)
     
@@ -194,8 +367,8 @@ export default function EventsContent() {
       description: event.description || '',
       event_date: formattedDate,
       frame_id: event.frame_id || '',
-      lat: event.lat.toString(),
-      lng: event.lng.toString(),
+      lat: lat != null ? String(lat) : '',
+      lng: lng != null ? String(lng) : '',
       characters: eventCharacters.map((c: any) => c.name).join(', ')
     })
     setShowForm(true)
@@ -216,22 +389,7 @@ export default function EventsContent() {
         characters: charactersArray
       }
       
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch(`http://localhost:3001/api/events/${editingEvent.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(eventData)
-      })
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('Error response:', errorText)
-        alert('Error al actualizar el evento')
-        return
-      }
+      await api.updateEvent(editingEvent.id, eventData)
       
       alert('Evento actualizado correctamente')
       setShowForm(false)
@@ -258,7 +416,7 @@ export default function EventsContent() {
   }
 
   // Mismo patrón que TimelineContent: mostrar loading state con traducción
-  if (loading) {
+  if (!authChecked || loading) {
     return (
       <>
         <Navbar />
@@ -392,7 +550,7 @@ export default function EventsContent() {
                         {selectedCharacters.map(char => (
                           <span key={char.id} className="bg-blue-100 text-blue-800 px-2 py-1 rounded flex items-center gap-1 text-sm">
                             {char.image_url && (
-                              <img src={char.image_url} alt={char.name} className="w-4 h-4 rounded-full object-cover" />
+                              <OptimizedImage src={char.image_url} alt={char.name} className="w-4 h-4 rounded-full object-cover" />
                             )}
                             {char.name}
                             <button
@@ -510,6 +668,11 @@ export default function EventsContent() {
             <div key={event.id} className="border rounded-lg p-4 shadow-sm">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
+                  {(() => {
+                    const lat = getEventLat(event)
+                    const lng = getEventLng(event)
+                    return (
+                      <>
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <h3 className="font-semibold text-lg">{event.title}</h3>
                     <span className={`text-xs px-2 py-1 rounded ${
@@ -525,14 +688,16 @@ export default function EventsContent() {
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-600 mb-2">{event.description}</p>
-                  <p className="text-sm text-gray-500">📅 {formatDateDisplay(event.event_date)}</p>
-                  <p className="text-sm text-gray-500">📍 {event.lat.toFixed(4)}, {event.lng.toFixed(4)}</p>
-                  {event.characters && event.characters.length > 0 && (
+                  <p className="text-gray-600 mb-2">{event.description || ''}</p>
+                  <p className="text-sm text-gray-500">📅 {formatDateDisplay(getEventDate(event))}</p>
+                  <p className="text-sm text-gray-500">
+                    📍 {lat != null && lng != null ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Sin coordenadas'}
+                  </p>
+                  {getEventCharacters(event).length > 0 && (
                     <div className="mt-2">
                       <strong className="text-sm">{t('characters')}:</strong>
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {event.characters.map((c: any, i: number) => (
+                        {getEventCharacters(event).map((c: any, i: number) => (
                           <span key={i} className="bg-gray-100 text-xs px-2 py-1 rounded">
                             {typeof c === 'string' ? c : c.name}
                           </span>
@@ -540,6 +705,9 @@ export default function EventsContent() {
                       </div>
                     </div>
                   )}
+                      </>
+                    )
+                  })()}
                 </div>
                 <div className="flex gap-2 ml-4">
                   <button

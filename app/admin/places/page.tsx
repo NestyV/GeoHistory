@@ -1,11 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, auth } from '@/lib/api'
 import Navbar from '@/app/components/layout/Navbar'
 import AdminNav from '@/app/components/layout/AdminNav'
 import { useRouter } from 'next/navigation'
 import { t } from '@/app/lib/i18n'
+
+const isAdminDebugEnabled = (): boolean => {
+  if (typeof window === 'undefined') return false
+
+  const params = new URLSearchParams(window.location.search)
+  const queryValue = params.get('adminDebug')
+
+  if (queryValue === '1') {
+    localStorage.setItem('admin_debug', '1')
+    return true
+  }
+
+  if (queryValue === '0') {
+    localStorage.removeItem('admin_debug')
+    return false
+  }
+
+  return localStorage.getItem('admin_debug') === '1'
+}
 
 export default function PlacesPage() {
   const [places, setPlaces] = useState<any[]>([])
@@ -23,9 +42,64 @@ export default function PlacesPage() {
     lng: ''
   })
   const router = useRouter()
-  
+  const debugRef = useRef(isAdminDebugEnabled())
+  const debugLog = useCallback((...args: any[]) => {
+    if (debugRef.current) {
+      console.log('[ADMIN PLACES]', ...args)
+    }
+  }, [])
+
   const currentUser = auth.getUser()
+  const isCurator = currentUser?.role === 'curator'
   const isSuperUser = currentUser?.role === 'super_user'
+  const isAtLeastCurator = isCurator || isSuperUser
+
+  useEffect(() => {
+    debugLog('Initial role state', {
+      userId: currentUser?.id,
+      role: currentUser?.role,
+      isAtLeastCurator,
+    })
+  }, [currentUser?.id, currentUser?.role, isAtLeastCurator, debugLog])
+
+  useEffect(() => {
+    if (!debugRef.current || typeof window === 'undefined') return
+
+    const onError = (event: ErrorEvent) => {
+      console.error('[ADMIN PLACES][WINDOW ERROR]', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error,
+      })
+    }
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('[ADMIN PLACES][UNHANDLED REJECTION]', event.reason)
+    }
+
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    }
+  }, [])
+
+  const getPlaceName = (place: any) => place.current_name || place.name || ''
+  const getPlacePreviousName = (place: any) => place.previous_name || place.description || ''
+  const getPlaceLat = (place: any): number | null => {
+    const value = place.lat ?? place.latitude
+    const parsed = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const getPlaceLng = (place: any): number | null => {
+    const value = place.lng ?? place.longitude
+    const parsed = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
 
   // Cargar marcos al inicio
   useEffect(() => {
@@ -33,40 +107,80 @@ export default function PlacesPage() {
       try {
         const data = await api.getFrames()
         setFrames(data || [])
+        debugLog('Frames loaded', { count: (data || []).length })
       } catch (error) {
         console.error('Error loading frames:', error)
+        debugLog('Frames load failed', error)
       }
     }
-    if (isSuperUser) {
+    if (isAtLeastCurator) {
+      debugLog('Loading frames for authorized user')
       loadFrames()
+    } else {
+      debugLog('Skipping frames load due to role gate')
     }
-  }, [isSuperUser])
+  }, [isAtLeastCurator, debugLog])
 
-  useEffect(() => {
-    if (!isSuperUser) {
-      router.push('/map')
-      return
-    }
-    fetchData()
-  }, [router, isSuperUser, selectedFrameId])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      let placesData
-      if (selectedFrameId) {
-        placesData = await api.getPlacesByFrame(selectedFrameId)
-      } else {
-        placesData = await api.getPlaces()
+      debugLog('Fetch started', { selectedFrameId })
+      const [placesResult, typesResult] = await Promise.allSettled([
+        selectedFrameId ? api.getPlacesByFrame(selectedFrameId) : api.getPlaces(),
+        api.getPlaceTypes(),
+      ])
+
+      const placesData = placesResult.status === 'fulfilled' ? placesResult.value : []
+      const typesData = typesResult.status === 'fulfilled' ? typesResult.value : []
+
+      if (placesResult.status === 'rejected') {
+        console.error('Error loading places:', placesResult.reason)
       }
-      const typesData = await api.getPlaceTypes()
+      if (typesResult.status === 'rejected') {
+        console.error('Error loading place types:', typesResult.reason)
+      }
+
+      debugLog('Fetch settled', {
+        placesStatus: placesResult.status,
+        placeTypesStatus: typesResult.status,
+        placesCount: placesData.length,
+        placeTypesCount: typesData.length,
+      })
+
       setPlaces(placesData || [])
       setPlaceTypes(typesData || [])
     } catch (error) {
       console.error('Error fetching data:', error)
+      debugLog('Fetch threw', error)
     } finally {
       setLoading(false)
+      debugLog('Fetch finished')
     }
-  }
+  }, [selectedFrameId, debugLog])
+
+  useEffect(() => {
+    debugLog('Gate check', {
+      role: currentUser?.role,
+      isAtLeastCurator,
+      hasToken: Boolean(auth.getToken()),
+    })
+
+    const hasToken = Boolean(auth.getToken())
+
+    if (!hasToken) {
+      debugLog('Redirecting to /auth due to missing/expired token')
+      router.push('/auth')
+      return
+    }
+
+    if (!isAtLeastCurator) {
+      debugLog('Redirecting to /map due to missing access')
+      router.push('/map')
+      return
+    }
+
+    debugLog('Authorized, fetching page data')
+    fetchData()
+  }, [router, isAtLeastCurator, fetchData, currentUser?.role, debugLog])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -77,31 +191,21 @@ export default function PlacesPage() {
         return
       }
       
-      const payload = {
+      const payloadBase = {
         place_type_id: formData.place_type_id,
         current_name: formData.current_name,
-        previous_name: formData.previous_name || null,
         lat: parseFloat(formData.lat),
         lng: parseFloat(formData.lng)
       }
-      
-      const url = editingItem 
-        ? `http://localhost:3001/api/places/${editingItem.id}`
-        : 'http://localhost:3001/api/places'
-      
-      const response = await fetch(url, {
-        method: editingItem ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        alert(error.error || 'Error al guardar')
-        return
+
+      const payload = formData.previous_name
+        ? { ...payloadBase, previous_name: formData.previous_name }
+        : payloadBase
+
+      if (editingItem) {
+        await api.updatePlace(editingItem.id, payload)
+      } else {
+        await api.createPlace(payload)
       }
       
       setShowForm(false)
@@ -123,18 +227,7 @@ export default function PlacesPage() {
         return
       }
       
-      const response = await fetch(`http://localhost:3001/api/places/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        alert(error.error || 'Error al eliminar')
-        return
-      }
+      await api.deletePlace(id)
       
       fetchData()
     } catch (error) {
@@ -144,26 +237,28 @@ export default function PlacesPage() {
   }
 
   const handleEdit = (item: any) => {
+    const lat = getPlaceLat(item)
+    const lng = getPlaceLng(item)
     setEditingItem(item)
     setFormData({
       place_type_id: item.place_type_id || '',
-      current_name: item.current_name,
-      previous_name: item.previous_name || '',
-      lat: item.lat.toString(),
-      lng: item.lng.toString()
+      current_name: getPlaceName(item),
+      previous_name: getPlacePreviousName(item),
+      lat: lat != null ? String(lat) : '',
+      lng: lng != null ? String(lng) : ''
     })
     setShowForm(true)
   }
 
   if (loading) return <div className="p-8 text-center">{t('loading')}</div>
 
-  if (!isSuperUser) {
+  if (!isAtLeastCurator) {
     return (
       <>
         <Navbar />
         <main className="p-8">
           <div className="text-center py-8 text-red-600">
-            Acceso denegado. Se requieren permisos de Administrador.
+            Acceso denegado. Se requieren permisos de Curador o Administrador.
           </div>
         </main>
       </>
@@ -289,21 +384,31 @@ export default function PlacesPage() {
             <div key={place.id} className="border rounded-lg p-4 shadow-sm hover:shadow-md transition">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
+                  {(() => {
+                    const lat = getPlaceLat(place)
+                    const lng = getPlaceLng(place)
+                    const placeName = getPlaceName(place)
+                    const placePrevName = getPlacePreviousName(place)
+                    return (
+                      <>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg">{place.place_type_icon || '📍'}</span>
-                    <h3 className="font-semibold text-lg">{place.current_name}</h3>
+                    <h3 className="font-semibold text-lg">{placeName}</h3>
                     <span className="text-xs bg-gray-100 px-2 py-1 rounded">
                       {place.place_type_name || 'Sin tipo'}
                     </span>
                   </div>
-                  {place.previous_name && (
+                  {placePrevName && (
                     <p className="text-sm text-gray-500">
-                      Anteriormente: {place.previous_name}
+                      Anteriormente: {placePrevName}
                     </p>
                   )}
                   <p className="text-sm text-gray-500 mt-1">
-                    📍 {place.lat.toFixed(4)}, {place.lng.toFixed(4)}
+                    📍 {lat != null && lng != null ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Sin coordenadas'}
                   </p>
+                      </>
+                    )
+                  })()}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -312,12 +417,14 @@ export default function PlacesPage() {
                   >
                     Editar
                   </button>
-                  <button
-                    onClick={() => handleDelete(place.id)}
-                    className="text-red-600 hover:text-red-800 text-sm"
-                  >
-                    Eliminar
-                  </button>
+                  {isSuperUser && (
+                    <button
+                      onClick={() => handleDelete(place.id)}
+                      className="text-red-600 hover:text-red-800 text-sm"
+                    >
+                      Eliminar
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

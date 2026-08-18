@@ -107,7 +107,7 @@ The refactored GeoHistory uses a **four-layer architecture**:
 
 - **No-cost**: All technology is free and open-source.
 - **Local-first**: Development environment runs entirely in WSL + Docker; production mirrors local setup.
-- **Minimal external services**: No Supabase, no Firebase, no third-party auth. PostgreSQL is the source of truth.
+- **Minimal external services**: No Firebase, no third-party auth. PostgreSQL is the source of truth.
 - **Single codebase**: One repository contains frontend, backend, and database schema.
 
 ### 3.3 Justified Alternatives & Exclusions
@@ -444,7 +444,7 @@ features/
 
 **Technology Stack**
 - All technology must be free and open-source
-- No paid SaaS services (no Supabase, Firebase, Auth0, etc.)
+- No paid SaaS services (no Firebase, Auth0, etc.)
 - All data stored in PostgreSQL running in Docker
 
 **Development Environment**
@@ -478,7 +478,7 @@ features/
 
 **Current Codebase**
 - Backend is monolithic; requires refactoring
-- Some Supabase references remain; need cleanup
+- Some legacy provider references remain; need cleanup
 - Duplicate component files (Map.tsx, Map.tsx.bkp); need consolidation
 - No test coverage; should be added post-refactor
 

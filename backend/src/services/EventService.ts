@@ -53,26 +53,32 @@ export class EventService {
     userId: string,
   ): Promise<Event> {
     try {
+      const eventDate = data.event_date || data.start_date;
+      const latitude = data.lat ?? data.latitude;
+      const longitude = data.lng ?? data.longitude;
+
       // Validate input
       if (!data.title || !data.title.trim()) {
         throw new ValidationError('Event title is required');
       }
-      if (!data.start_date) {
+      if (!eventDate) {
         throw new ValidationError('Event start date is required');
+      }
+      if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+        throw new ValidationError('Event coordinates are required');
       }
 
       const event = await eventRepository.create({
         user_id: userId,
+        frame_id: data.frame_id ?? null,
         title: data.title.trim(),
         description: data.description || '',
-        start_date: new Date(data.start_date),
-        end_date: data.end_date ? new Date(data.end_date) : undefined,
-        location: data.location,
-        latitude: data.latitude,
-        longitude: data.longitude,
+        event_date: new Date(eventDate),
+        lat: latitude,
+        lng: longitude,
+        characters: JSON.stringify(Array.isArray(data.characters) ? data.characters : []),
         status: 'pending',
         created_at: new Date(),
-        updated_at: new Date(),
       } as any);
 
       defaultLogger.info('Event created', { event_id: event.id, user_id: userId });
@@ -104,12 +110,15 @@ export class EventService {
       const updated = await eventRepository.update(eventId, {
         title: data.title?.trim(),
         description: data.description?.trim(),
-        start_date: data.start_date ? new Date(data.start_date) : undefined,
-        end_date: data.end_date ? new Date(data.end_date) : undefined,
-        location: data.location,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        updated_at: new Date(),
+        event_date: (data.event_date || data.start_date)
+          ? new Date(data.event_date || (data.start_date as string))
+          : undefined,
+        frame_id: data.frame_id,
+        characters: data.characters !== undefined
+          ? JSON.stringify(Array.isArray(data.characters) ? data.characters : [])
+          : undefined,
+        lat: data.lat ?? data.latitude,
+        lng: data.lng ?? data.longitude,
       } as any);
 
       if (!updated) {

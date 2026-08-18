@@ -1,5 +1,7 @@
 # GeoHistory - Especificaciones de Diseño
 
+> **Deprecated reference.** This document records the pre-refactor product state and must not be used for implementation decisions. Use `specs/Constitution.md`, `specs/Security.md`, `specs/Features.md`, `specs/Design.md`, and `specs/Operations.md` for approved requirements. Confirm current behavior in the owning code, tests, and `db/schema.sql`.
+
 ## 1. Visión General
 
 GeoHistory es una aplicación colaborativa de mapas históricos donde los usuarios pueden marcar eventos históricos, asociarlos a marcos históricos y personajes. Los eventos requieren aprobación de administradores.
@@ -382,7 +384,7 @@ docker exec geohistory-postgres psql -U geohistory_user -d geohistory -c "\dt"
 
 | Fecha      | Cambio                                      | Componente |
 |------------|---------------------------------------------|------------|
-| 2026-05-25 | Migración de Supabase a PostgreSQL local    | Backend |
+| 2026-05-25 | Migración a PostgreSQL local                | Backend |
 | 2026-05-25 | Implementación de mapa con clic derecho     | Map.tsx |
 | 2026-05-26 | CRUD completo para admin                    | Admin pages |
 | 2026-05-26 | Filtros de marcos y años | Map.tsx |

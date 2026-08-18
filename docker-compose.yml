@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -30,6 +28,7 @@ services:
     container_name: geohistory-backend
     environment:
       NODE_ENV: development
+      DATABASE_URL: postgresql://geohistory_user:change_this_password_12345@postgres:5432/geohistory
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: geohistory
@@ -37,6 +36,7 @@ services:
       DB_PASSWORD: change_this_password_12345
       PORT: 3001
       JWT_SECRET: your_super_secret_jwt_key_change_this_min_32_characters
+      JWT_REFRESH_SECRET: your_super_secret_refresh_jwt_key_change_this_min_32_characters
       JWT_EXPIRATION: 7d
       CORS_ORIGIN: http://localhost:3000
     ports:
